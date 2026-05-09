@@ -570,6 +570,27 @@
       line-height: 1.45;
     }
 
+
+    tr.active-batter {
+      background-color: var(--mint) !important;
+      border-left: 4px solid var(--green);
+      font-weight: 800;
+    }
+
+    .score-btn:active,
+    .primary-btn:active,
+    .secondary-btn:active,
+    .ghost-btn:active,
+    .danger-btn:active {
+      transform: translateY(2px);
+      filter: brightness(0.94);
+    }
+
+    .timeline {
+      scrollbar-width: thin;
+      scrollbar-color: var(--line) transparent;
+    }
+
     @media (max-width: 980px) {
       .topbar,
       .grid {
@@ -759,7 +780,7 @@
               <label for="optionalOverthrowRunsInput">Overthrow runs, optional</label>
               <input id="optionalOverthrowRunsInput" type="number" min="0" max="6" value="0" />
             </div>
-            <p class="small-note">Leave this as 0 for normal deliveries. If an overthrow happens, enter those runs first, then click the actual delivery button.</p>
+            <p class="small-note">For normal bat runs only. For wides/no-balls/byes/leg-byes, enter overthrow runs inside the extra popup.</p>
           </div>
           <div class="score-buttons">
             <button class="score-btn" data-run="0">0</button>
@@ -1413,14 +1434,18 @@
 
       $("extraPopupTitle").textContent = `${extraLabels[type]} Runs`;
       $("extraPopupHelp").textContent = isPenaltyExtra
-        ? "The penalty run is added automatically. Enter only the runs completed on this delivery. Use the optional overthrow field outside this popup when needed."
-        : "Enter the runs completed on this legal delivery. Use the optional overthrow field outside this popup when needed.";
+        ? "The penalty run is added automatically. Enter all runs for this same delivery."
+        : "Enter completed runs and any overthrow runs for this same legal delivery.";
       $("extraRunButtons").innerHTML = `
         <div class="field">
           <label>${completedLabel}</label>
           <input id="completedRunsInput" type="number" min="0" max="6" value="${defaultCompletedRuns}" />
         </div>
-        <button class="primary-btn" id="confirmDeliveryRunsBtn">Add Runs</button>
+        <div class="field" style="margin-top:10px;">
+          <label>Overthrow Runs</label>
+          <input id="extraOverthrowInput" type="number" min="0" max="6" value="0" />
+        </div>
+        <button class="primary-btn" id="confirmDeliveryRunsBtn" style="margin-top:10px;">Add Runs</button>
       `;
       $("extraPopup").classList.add("show");
     }
@@ -1911,9 +1936,12 @@
         const stat = readBattingStat(player.id, inning);
         const strikeRate = stat.balls > 0 ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
         const status = dismissalText(stat, player.id);
-        const strikeMark = player.id === state.selectedStriker ? " *" : player.id === state.selectedNonStriker ? " †" : "";
+        const isStriker = player.id === state.selectedStriker;
+        const isNonStriker = player.id === state.selectedNonStriker;
+        const strikeMark = isStriker ? " *" : isNonStriker ? " †" : "";
+        const activeClass = isStriker || isNonStriker ? "active-batter" : "";
         return `
-          <tr>
+          <tr class="${activeClass}">
             <td>${escapeHtml(player.name)}${strikeMark}</td>
             <td>${stat.runs}</td>
             <td>${stat.balls}</td>
@@ -2081,13 +2109,12 @@
       if (event.target.id !== "confirmDeliveryRunsBtn") return;
 
       const completedRuns = Number($("completedRunsInput").value) || 0;
-      const overthrowRuns = getOptionalOverthrowRuns();
+      const overthrowRuns = Number($("extraOverthrowInput")?.value) || 0;
 
       if (pendingExtraType) {
         const type = pendingExtraType;
         closeExtraPopup();
         scoreExtra(type, completedRuns, overthrowRuns);
-        resetOptionalOverthrowRuns();
       }
     });
 
