@@ -683,6 +683,11 @@
       letter-spacing: 0.08em;
     }
 
+
+    .free-hit-badge[hidden] {
+      display: none !important;
+    }
+
     .quota-warning {
       background: #fff8e6;
       border-left: 4px solid var(--amber);
@@ -2343,12 +2348,19 @@
       targetValue.textContent = state.target || "--";
       requiredRateValue.textContent = requiredRate();
       battingLabel.textContent = isReady ? `${teamName(inning.battingTeam)} batting` : "Current Score";
-      if ($("freeHitBadge")) $("freeHitBadge").hidden = !(isReady && inning.freeHit && !state.matchComplete);
+      if ($("freeHitBadge")) {
+        $("freeHitBadge").hidden = !(
+          state.matchStarted &&
+          !state.matchComplete &&
+          inning &&
+          inning.freeHit === true
+        );
+      }
 
       if (!isReady) {
         scoreContext.textContent = "Set up a match to begin scoring.";
       } else {
-        const freeHitText = inning.freeHit ? " | FREE HIT next legal ball" : "";
+        const freeHitText = state.matchStarted && !state.matchComplete && inning.freeHit ? " | FREE HIT next legal ball" : "";
         scoreContext.textContent = `${teamName(inning.bowlingTeam)} bowling | Balls ${inning.legalBalls} | Extras ${extrasTotal(inning)} | ${state.totalOvers} overs match${freeHitText}`;
       }
     }
