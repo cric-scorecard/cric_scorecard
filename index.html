@@ -498,6 +498,38 @@
       gap: 10px;
     }
 
+
+    .extras-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .extras-detail-box {
+      min-height: 64px;
+      padding: 11px;
+      background: #fbfdfc;
+      border: 1px solid #e6eee9;
+      border-radius: 8px;
+    }
+
+    .extras-detail-box span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .extras-detail-box strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--navy);
+      font-size: 1.08rem;
+    }
+
     .summary-box {
       min-height: 78px;
       padding: 13px;
@@ -567,7 +599,8 @@
       .form-grid,
       .teams-grid,
       .selection-grid,
-      .summary-grid {
+      .summary-grid,
+      .extras-detail-grid {
         grid-template-columns: 1fr;
       }
 
@@ -771,6 +804,29 @@
             <div class="summary-box">
               <span>Result</span>
               <strong id="summaryResult">Match not finished</strong>
+            </div>
+          </div>
+
+          <div class="extras-detail-grid" aria-label="Extras breakdown">
+            <div class="extras-detail-box">
+              <span>Wides</span>
+              <strong id="widesValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>No Balls</span>
+              <strong id="noBallsValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>Byes</span>
+              <strong id="byesValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>Leg Byes</span>
+              <strong id="legByesValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>Total Extras</span>
+              <strong id="totalExtrasValue">0</strong>
             </div>
           </div>
         </section>
@@ -1328,6 +1384,7 @@
         inning.runs += totalRuns;
         inning.extras.noBalls += 1;
         batter.runs += batterRuns;
+        batter.balls += 1;
         if (batterRuns === 4) batter.fours += 1;
         if (batterRuns === 6) batter.sixes += 1;
         bowler.runs += totalRuns;
@@ -1609,6 +1666,32 @@
       $("summaryResult").textContent = state.result;
     }
 
+
+    function renderExtras() {
+      const inning = currentInnings();
+
+      if (!inning) {
+        $("widesValue").textContent = "0";
+        $("noBallsValue").textContent = "0";
+        $("byesValue").textContent = "0";
+        $("legByesValue").textContent = "0";
+        $("totalExtrasValue").textContent = "0";
+        return;
+      }
+
+      const wides = inning.extras.wides || 0;
+      const noBalls = inning.extras.noBalls || 0;
+      const byes = inning.extras.byes || 0;
+      const legByes = inning.extras.legByes || 0;
+      const total = wides + noBalls + byes + legByes;
+
+      $("widesValue").textContent = wides;
+      $("noBallsValue").textContent = noBalls;
+      $("byesValue").textContent = byes;
+      $("legByesValue").textContent = legByes;
+      $("totalExtrasValue").textContent = total;
+    }
+
     function renderTimeline() {
       const inning = currentInnings();
       const timeline = $("timeline");
@@ -1715,6 +1798,7 @@
       renderSelectors();
       renderScoreHero();
       renderSummary();
+      renderExtras();
       renderTimeline();
       renderBattingTable();
       renderBowlingTable();
