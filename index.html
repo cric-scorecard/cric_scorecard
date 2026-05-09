@@ -381,7 +381,7 @@
 
     .extra-run-buttons {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 10px;
     }
 
@@ -708,7 +708,6 @@
             <button class="score-btn extra" data-extra="noBall">No Ball</button>
             <button class="score-btn extra" data-extra="bye">Bye</button>
             <button class="score-btn extra" data-extra="legBye">Leg Bye</button>
-            <button class="score-btn extra" data-extra="overthrow">Overthrow</button>
             <button class="score-btn wicket" id="wicketBtn">Wicket</button>
             <button class="score-btn" id="undoBtn">Undo</button>
           </div>
@@ -819,11 +818,11 @@
       wide: "Wide",
       noBall: "No Ball",
       bye: "Bye",
-      legBye: "Leg Bye",
-      overthrow: "Overthrow"
+      legBye: "Leg Bye"
     };
     let skipNextSave = false;
     let pendingExtraType = "";
+    let pendingRunValue = null;
 
     function createDefaultState() {
       return {
@@ -1201,7 +1200,28 @@
       }
     }
 
-    function scoreRun(runs) {
+    function openRunPopup(runs) {
+      if (!canScore()) return;
+      pendingRunValue = Number(runs) || 0;
+      pendingExtraType = "";
+
+      $("extraPopupTitle").textContent = `Runs + Overthrow`;
+      $("extraPopupHelp").textContent = "Use this when the batter scores runs and any overthrow happens on the same legal delivery.";
+      $("extraRunButtons").innerHTML = `
+        <div class="field">
+          <label>Runs off bat</label>
+          <input id="completedRunsInput" type="number" min="0" max="6" value="${pendingRunValue}" />
+        </div>
+        <div class="field">
+          <label>Overthrow runs</label>
+          <input id="overthrowRunsInput" type="number" min="0" max="6" value="0" />
+        </div>
+        <button class="primary-btn" id="confirmDeliveryRunsBtn">Add Runs</button>
+      `;
+      $("extraPopup").classList.add("show");
+    }
+
+    function scoreRun(runs, overthrowRuns = 0) {
       if (!canScore()) return;
       saveHistory();
 
@@ -1209,84 +1229,130 @@
       const batter = getBattingStat(state.selectedStriker, inning);
       const bowler = getBowlingStat(state.selectedBowler, inning);
       const label = nextBallLabel(inning);
+      const batRuns = Math.max(0, Number(runs) || 0);
+      const overthrow = Math.max(0, Number(overthrowRuns) || 0);
+      const totalRuns = batRuns + overthrow;
 
-      inning.runs += runs;
-      batter.runs += runs;
+      inning.runs += totalRuns;
+      batter.runs += totalRuns;
       batter.balls += 1;
-      if (runs === 4) batter.fours += 1;
-      if (runs === 6) batter.sixes += 1;
-      bowler.runs += runs;
-      bowler.currentOverRuns += runs;
+      if (totalRuns === 4) batter.fours += 1;
+      if (totalRuns === 6) batter.sixes += 1;
+      bowler.runs += totalRuns;
+      bowler.currentOverRuns += totalRuns;
 
-      addTimeline("run", `${playerName(state.selectedStriker)} scores ${runs} run${runs === 1 ? "" : "s"}`, label);
-      completeLegalBall(runs);
+      addTimeline(
+        "run",
+        `${playerName(state.selectedStriker)} scores ${batRuns}${overthrow ? ` + ${overthrow} overthrow` : ""} = ${totalRuns} run${totalRuns === 1 ? "" : "s"}`,
+        label
+      );
+      completeLegalBall(totalRuns);
       render();
     }
 
     function openExtraPopup(type) {
       if (!canScore()) return;
       pendingExtraType = type;
+      pendingRunValue = null;
 
       const isPenaltyExtra = type === "wide" || type === "noBall";
-      const runOptions = isPenaltyExtra ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6];
-      $("extraPopupTitle").textContent = `${extraLabels[type]} Runs`;
+      const defaultCompletedRuns = isPenaltyExtra ? 0 : 1;
+      const completedLabel = type === "noBall" ? "Runs off bat" : "Runs completed";
+
+      $("extraPopupTitle").textContent = `${extraLabels[type]} + Overthrow`;
       $("extraPopupHelp").textContent = isPenaltyExtra
-        ? "1 penalty run is added automatically. Select any additional runs completed."
-        : "Select the total runs completed on this legal delivery.";
-      $("extraRunButtons").innerHTML = runOptions.map((runs) => {
-        const label = isPenaltyExtra && runs === 0 ? "Penalty only" : `${runs} run${runs === 1 ? "" : "s"}`;
-        return `<button data-extra-run-choice="${runs}">${label}</button>`;
-      }).join("");
+        ? "The penalty run is added automatically. Add runs completed and overthrow runs from the same illegal delivery."
+        : "Add runs completed and overthrow runs from the same legal delivery.";
+      $("extraRunButtons").innerHTML = `
+        <div class="field">
+          <label>${completedLabel}</label>
+          <input id="completedRunsInput" type="number" min="0" max="6" value="${defaultCompletedRuns}" />
+        </div>
+        <div class="field">
+          <label>Overthrow runs</label>
+          <input id="overthrowRunsInput" type="number" min="0" max="6" value="0" />
+        </div>
+        <button class="primary-btn" id="confirmDeliveryRunsBtn">Add Runs</button>
+      `;
       $("extraPopup").classList.add("show");
     }
 
     function closeExtraPopup() {
       pendingExtraType = "";
+      pendingRunValue = null;
       $("extraPopup").classList.remove("show");
       $("extraRunButtons").innerHTML = "";
     }
 
-    function scoreExtra(type, selectedRuns) {
+    function scoreExtra(type, completedRuns, overthrowRuns = 0) {
       if (!canScore()) return;
       saveHistory();
 
       const inning = currentInnings();
       const bowler = getBowlingStat(state.selectedBowler, inning);
       const label = nextBallLabel(inning);
-      const runsFromPopup = Math.max(0, Math.min(6, Number(selectedRuns) || 0));
-      const extraRuns = type === "wide" || type === "noBall" ? 1 + runsFromPopup : Math.max(1, runsFromPopup);
-      const runWord = extraRuns === 1 ? "run" : "runs";
+      const completed = Math.max(0, Number(completedRuns) || 0);
+      const overthrow = Math.max(0, Number(overthrowRuns) || 0);
 
-      inning.runs += extraRuns;
-
-      // Wides and no-balls add runs but do not consume a legal ball.
       if (type === "wide") {
-        inning.extras.wides += extraRuns;
-        bowler.runs += extraRuns;
-        bowler.currentOverRuns += extraRuns;
-        if (runsFromPopup % 2 === 1) swapStrike();
-        addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
+        // Wide is an illegal delivery. All completed/overthrow runs are wides,
+        // charged to the bowler, and the ball count does not increase.
+        const totalRuns = 1 + completed + overthrow;
+        inning.runs += totalRuns;
+        inning.extras.wides += totalRuns;
+        bowler.runs += totalRuns;
+        bowler.currentOverRuns += totalRuns;
+
+        if ((completed + overthrow) % 2 === 1) swapStrike();
+        addTimeline(
+          "extra",
+          `Wide: 1 penalty + ${completed} run${completed === 1 ? "" : "s"}${overthrow ? ` + ${overthrow} overthrow` : ""} = ${totalRuns} wide run${totalRuns === 1 ? "" : "s"}`,
+          label
+        );
+        checkInningsProgress();
       }
 
       if (type === "noBall") {
-        inning.extras.noBalls += extraRuns;
-        bowler.runs += extraRuns;
-        bowler.currentOverRuns += extraRuns;
-        if (runsFromPopup % 2 === 1) swapStrike();
-        addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
+        // No ball is an illegal delivery. The penalty is an extra; runs off the bat
+        // including overthrow are credited to the batter. All runs are charged to the bowler.
+        const batterRuns = completed + overthrow;
+        const totalRuns = 1 + batterRuns;
+        const batter = getBattingStat(state.selectedStriker, inning);
+
+        inning.runs += totalRuns;
+        inning.extras.noBalls += 1;
+        batter.runs += batterRuns;
+        if (batterRuns === 4) batter.fours += 1;
+        if (batterRuns === 6) batter.sixes += 1;
+        bowler.runs += totalRuns;
+        bowler.currentOverRuns += totalRuns;
+
+        if (batterRuns % 2 === 1) swapStrike();
+        addTimeline(
+          "extra",
+          `No Ball: 1 penalty + ${completed} bat run${completed === 1 ? "" : "s"}${overthrow ? ` + ${overthrow} overthrow` : ""} = ${totalRuns} total`,
+          label
+        );
+        checkInningsProgress();
       }
 
-      // Byes, leg byes, and this simple overthrow button consume a ball, but they are not charged to the bowler.
-      if (type === "bye" || type === "legBye" || type === "overthrow") {
+      if (type === "bye" || type === "legBye") {
+        // Byes and leg byes are legal deliveries. They add to team extras,
+        // but they are not charged to the bowler and not credited to the batter.
+        const totalRuns = completed + overthrow;
         const batter = getBattingStat(state.selectedStriker, inning);
+
+        inning.runs += totalRuns;
         batter.balls += 1;
-        if (type === "bye") inning.extras.byes += extraRuns;
-        if (type === "legBye") inning.extras.legByes += extraRuns;
-        if (type === "overthrow") inning.extras.overthrows += extraRuns;
-        addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
-        completeLegalBall(extraRuns);
-      } else {
-        checkInningsProgress();
+        if (type === "bye") inning.extras.byes += totalRuns;
+        if (type === "legBye") inning.extras.legByes += totalRuns;
+
+        addTimeline(
+          "extra",
+          `${extraLabels[type]}: ${completed} run${completed === 1 ? "" : "s"}${overthrow ? ` + ${overthrow} overthrow` : ""} = ${totalRuns} extra run${totalRuns === 1 ? "" : "s"}`,
+          label
+        );
+        completeLegalBall(totalRuns);
       }
 
       render();
@@ -1707,7 +1773,7 @@
     });
 
     document.querySelectorAll("[data-run]").forEach((button) => {
-      button.addEventListener("click", () => scoreRun(Number(button.dataset.run)));
+      button.addEventListener("click", () => openRunPopup(Number(button.dataset.run)));
     });
 
     document.querySelectorAll("[data-extra]").forEach((button) => {
@@ -1715,12 +1781,22 @@
     });
 
     $("extraRunButtons").addEventListener("click", (event) => {
-      const button = event.target.closest("[data-extra-run-choice]");
-      if (!button || !pendingExtraType) return;
-      const type = pendingExtraType;
-      const runs = Number(button.dataset.extraRunChoice);
-      closeExtraPopup();
-      scoreExtra(type, runs);
+      if (event.target.id !== "confirmDeliveryRunsBtn") return;
+
+      const completedRuns = Number($("completedRunsInput").value) || 0;
+      const overthrowRuns = Number($("overthrowRunsInput").value) || 0;
+
+      if (pendingExtraType) {
+        const type = pendingExtraType;
+        closeExtraPopup();
+        scoreExtra(type, completedRuns, overthrowRuns);
+        return;
+      }
+
+      if (pendingRunValue !== null) {
+        closeExtraPopup();
+        scoreRun(completedRuns, overthrowRuns);
+      }
     });
 
     $("closeExtraPopupBtn").addEventListener("click", closeExtraPopup);
