@@ -4,8 +4,377 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cricket Scorecard Calculator</title>
-  <style>
-    :root {
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Cricket Scorecard Calculator</h1>
+        <p>Create a match, add players, score every ball, and watch the cards update live.</p>
+      </div>
+      <div class="status-pill">
+        <span>Match Status</span>
+        <strong id="matchStatus">Not started</strong>
+      </div>
+    </header>
+
+    <section class="score-hero" aria-label="Live score overview">
+      <div class="score-main">
+        <div>
+          <div class="score-label" id="battingLabel">Current Score</div>
+          <div class="score-value" id="scoreValue">0/0</div>
+        </div>
+        <div class="score-context" id="scoreContext">Set up a match to begin scoring.</div>
+        <div class="free-hit-badge" id="freeHitBadge" hidden>FREE HIT</div>
+      </div>
+      <div class="metric">
+        <span>Overs</span>
+        <strong id="oversValue">0.0</strong>
+      </div>
+      <div class="metric">
+        <span>Run Rate</span>
+        <strong id="runRateValue">0.00</strong>
+      </div>
+      <div class="metric">
+        <span>Target</span>
+        <strong id="targetValue">--</strong>
+      </div>
+      <div class="metric">
+        <span>Required RR</span>
+        <strong id="requiredRateValue">--</strong>
+      </div>
+    </section>
+
+    <div class="grid">
+      <div class="stack">
+        <section class="card">
+          <div class="card-header">
+            <h2>1. Create Match</h2>
+            <span class="hint">Team setup</span>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="team1Name">Team 1 Name</label>
+              <input id="team1Name" value="Team 1" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="team2Name">Team 2 Name</label>
+              <input id="team2Name" value="Team 2" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="matchType">Match Type</label>
+              <select id="matchType">
+                <option value="10">T10</option>
+                <option value="20" selected>T20</option>
+                <option value="50">ODI</option>
+                <option value="90">Test / Custom Overs</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="totalOvers">Total Overs</label>
+              <input id="totalOvers" type="number" min="1" max="450" value="20" />
+            </div>
+            <div class="field">
+              <label for="battingTeamSelect">Batting Team</label>
+              <select id="battingTeamSelect">
+                <option value="0">Team 1</option>
+                <option value="1">Team 2</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="bowlingTeamSelect">Bowling Team</label>
+              <select id="bowlingTeamSelect">
+                <option value="1">Team 2</option>
+                <option value="0">Team 1</option>
+              </select>
+            </div>
+          </div>
+          <div class="button-row">
+            <button class="primary-btn" id="createMatchBtn">Create / Reset Match</button>
+          </div>
+
+          <div class="cloud-panel" aria-label="Shared online scorecard">
+            <h3>Share Scorecard</h3>
+            <div class="cloud-grid">
+              <div class="field">
+                <label for="joinPinInput">4-digit PIN</label>
+                <input id="joinPinInput" inputmode="numeric" maxlength="4" placeholder="Enter PIN" autocomplete="off" />
+              </div>
+              <button class="secondary-btn" id="createOnlineMatchBtn">Create PIN</button>
+              <button class="ghost-btn" id="joinOnlineMatchBtn">Join PIN</button>
+            </div>
+            <div class="button-row">
+              <span class="pin-pill" id="activePinValue">----</span>
+              <button class="ghost-btn" id="copyPinBtn">Copy PIN</button>
+              <button class="danger-btn" id="leaveOnlineMatchBtn">Leave Online</button>
+            </div>
+            <div class="sync-status" id="syncStatus">Local only. Add Firebase URL in code to enable online sharing.</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>2. Add Players</h2>
+            <span class="hint">Up to 11 per team</span>
+          </div>
+          <div class="teams-grid">
+            <div class="team-panel">
+              <h3><span id="team0Title">Team 1</span><small id="team0Count">0/11</small></h3>
+              <div class="player-add">
+                <input id="team0PlayerInput" placeholder="Player name" autocomplete="off" />
+                <button class="secondary-btn" data-add-player="0">Add</button>
+              </div>
+              <ul class="player-list" id="team0Players"></ul>
+            </div>
+            <div class="team-panel">
+              <h3><span id="team1Title">Team 2</span><small id="team1Count">0/11</small></h3>
+              <div class="player-add">
+                <input id="team1PlayerInput" placeholder="Player name" autocomplete="off" />
+                <button class="secondary-btn" data-add-player="1">Add</button>
+              </div>
+              <ul class="player-list" id="team1Players"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>3. Select Players</h2>
+            <span class="hint">Active batter and bowler</span>
+          </div>
+          <div class="selection-grid">
+            <div class="field">
+              <label for="strikerSelect">Striker</label>
+              <select id="strikerSelect"></select>
+            </div>
+            <div class="field">
+              <label for="nonStrikerSelect">Non-Striker</label>
+              <select id="nonStrikerSelect"></select>
+            </div>
+            <div class="field">
+              <label for="bowlerSelect">Bowler</label>
+              <select id="bowlerSelect"></select>
+            </div>
+          </div>
+          <p class="small-note">After a wicket, the next available batter is selected automatically. You can always adjust the striker, non-striker, or bowler before the next ball.</p>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>4. Live Scoring</h2>
+            <span class="hint" id="scoreHint">Select players to score</span>
+          </div>
+          <div class="overthrow-inline">
+            <div class="field">
+              <label for="optionalOverthrowRunsInput">Overthrow runs, optional</label>
+              <input id="optionalOverthrowRunsInput" type="number" min="0" max="6" value="0" />
+            </div>
+            <p class="small-note">For normal bat runs only. For wides/no-balls/byes/leg-byes, enter overthrow runs inside the extra popup.</p>
+          </div>
+          <div class="score-buttons">
+            <button class="score-btn" data-run="0">0</button>
+            <button class="score-btn" data-run="1">1</button>
+            <button class="score-btn" data-run="2">2</button>
+            <button class="score-btn" data-run="3">3</button>
+            <button class="score-btn boundary" data-run="4">4</button>
+            <button class="score-btn boundary" data-run="6">6</button>
+            <button class="score-btn extra" data-extra="wide">Wide</button>
+            <button class="score-btn extra" data-extra="noBall">No Ball</button>
+            <button class="score-btn extra" data-extra="bye">Bye</button>
+            <button class="score-btn extra" data-extra="legBye">Leg Bye</button>
+            <button class="score-btn wicket" id="wicketBtn">Wicket</button>
+            <button class="score-btn" id="swapStrikeBtn">Swap Strike</button>
+            <button class="score-btn" id="undoBtn">Undo</button>
+          </div>
+          <div class="button-row">
+            <button class="danger-btn" id="endInningsBtn">End Innings</button>
+            <button class="ghost-btn" id="resetMatchBtn">Reset Match</button>
+          </div>
+        </section>
+      </div>
+
+      <aside class="stack">
+        <section class="card">
+          <div class="card-header">
+            <h2>Match Summary</h2>
+            <span class="hint" id="inningsLabel">Innings --</span>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-box">
+              <span id="summaryTeam0Name">Team 1</span>
+              <strong id="summaryTeam0Score">0/0 (0.0)</strong>
+            </div>
+            <div class="summary-box">
+              <span id="summaryTeam1Name">Team 2</span>
+              <strong id="summaryTeam1Score">0/0 (0.0)</strong>
+            </div>
+            <div class="summary-box">
+              <span>Current Innings</span>
+              <strong id="summaryCurrent">--</strong>
+            </div>
+            <div class="summary-box">
+              <span>Result</span>
+              <strong id="summaryResult">Match not finished</strong>
+            </div>
+            <div class="summary-box">
+              <span id="summaryTeam0BoundaryName">Team 1 Boundaries</span>
+              <strong id="summaryTeam0Boundaries">4s: 0 | 6s: 0</strong>
+            </div>
+            <div class="summary-box">
+              <span id="summaryTeam1BoundaryName">Team 2 Boundaries</span>
+              <strong id="summaryTeam1Boundaries">4s: 0 | 6s: 0</strong>
+            </div>
+          </div>
+
+          <div class="innings-viewer" aria-label="View innings scorecards">
+            <button id="viewLiveBtn" class="active">Live</button>
+            <button id="viewInnings1Btn">1st Innings</button>
+            <button id="viewInnings2Btn">2nd Innings</button>
+          </div>
+          <div class="viewing-note" id="viewingInningsNote">Showing live innings.</div>
+
+
+          <div class="extras-detail-grid" aria-label="Extras breakdown">
+            <div class="extras-detail-box">
+              <span>Wides</span>
+              <strong id="widesValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>No Balls</span>
+              <strong id="noBallsValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>Byes</span>
+              <strong id="byesValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>Leg Byes</span>
+              <strong id="legByesValue">0</strong>
+            </div>
+            <div class="extras-detail-box">
+              <span>Total Extras</span>
+              <strong id="totalExtrasValue">0</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>Fall of Wickets</h2>
+            <span class="hint" id="fowCount">0 wickets</span>
+          </div>
+          <div class="fow-list" id="fallOfWicketsList">
+            <div class="empty-state">No wickets yet.</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>Ball-by-Ball Timeline</h2>
+            <span class="hint" id="timelineCount">0 balls</span>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="card" style="margin-top: 18px;">
+      <div class="card-header">
+        <h2>Batting Scorecard</h2>
+        <span class="hint" id="battingCardTeam">--</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Batter</th>
+              <th>Runs</th>
+              <th>Balls</th>
+              <th>4s</th>
+              <th>6s</th>
+              <th>Strike Rate</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="battingTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <div class="card-header">
+        <h2>Bowling Scorecard</h2>
+        <span class="hint" id="bowlingCardTeam">--</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Bowler</th>
+              <th>Overs</th>
+              <th>Maidens</th>
+              <th>Runs</th>
+              <th>Wickets</th>
+              <th>Wd</th>
+              <th>Nb</th>
+              <th>Economy</th>
+            </tr>
+          </thead>
+          <tbody id="bowlingTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="popup-backdrop" id="extraPopup" role="dialog" aria-modal="true" aria-labelledby="extraPopupTitle">
+    <div class="extra-popup">
+      <h3 id="extraPopupTitle">Select Extra Runs</h3>
+      <p id="extraPopupHelp">Choose the runs to add for this delivery.</p>
+      <div class="extra-run-buttons" id="extraRunButtons"></div>
+      <div class="button-row">
+        <button class="ghost-btn" id="closeExtraPopupBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="popup-backdrop" id="wicketPopup" role="dialog" aria-modal="true" aria-labelledby="wicketPopupTitle">
+    <div class="extra-popup">
+      <h3 id="wicketPopupTitle">Wicket Details</h3>
+      <p class="small-note">Choose how the batter got out. Bowler credit is applied only for dismissals that count for the bowler.</p>
+      <div class="field">
+        <label for="wicketDeliveryTypeSelect">Delivery Type</label>
+        <select id="wicketDeliveryTypeSelect">
+          <option value="legal">Legal Delivery</option>
+          <option value="wide">Wide + Wicket</option>
+          <option value="noBall">No Ball + Wicket</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top: 12px;">
+        <label for="dismissalTypeSelect">Dismissal Type</label>
+        <select id="dismissalTypeSelect">
+          <option value="bowled">Bowled</option>
+          <option value="caught">Caught</option>
+          <option value="lbw">LBW</option>
+          <option value="stumped">Stumped</option>
+          <option value="hitWicket">Hit Wicket</option>
+          <option value="runOut">Run Out</option>
+          <option value="retiredHurt">Retired Hurt</option>
+          <option value="retiredOut">Retired Out</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top: 12px;">
+        <label for="fielderSelect">Fielder / Keeper Involved</label>
+        <select id="fielderSelect"></select>
+      </div>
+      <div class="button-row">
+        <button class="primary-btn" id="confirmWicketBtn">Add Wicket</button>
+        <button class="ghost-btn" id="closeWicketPopupBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
       --navy: #07182f;
       --navy-soft: #10243f;
       --green: #13a46b;
