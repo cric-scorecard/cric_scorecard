@@ -858,7 +858,8 @@
     }
 
     function teamName(index) {
-      return state.teams[index]?.name || `Team ${index + 1}`;
+      const rawName = state.teams[index]?.name || "";
+      return rawName.trim() || `Team ${index + 1}`;
     }
 
     function getBattingStat(playerId, inning = currentInnings()) {
@@ -885,6 +886,26 @@
         };
       }
       return inning.bowling[playerId];
+    }
+
+    function readBattingStat(playerId, inning = currentInnings()) {
+      return inning?.batting[playerId] || {
+        runs: 0,
+        balls: 0,
+        fours: 0,
+        sixes: 0,
+        out: false
+      };
+    }
+
+    function readBowlingStat(playerId, inning = currentInnings()) {
+      return inning?.bowling[playerId] || {
+        balls: 0,
+        maidens: 0,
+        runs: 0,
+        wickets: 0,
+        currentOverRuns: 0
+      };
     }
 
     function playerById(playerId) {
@@ -940,7 +961,7 @@
       const inning = currentInnings();
       const battingTeam = state.teams[inning.battingTeam];
       const next = battingTeam.players.find((player) => {
-        const stat = getBattingStat(player.id, inning);
+        const stat = readBattingStat(player.id, inning);
         return !stat.out && player.id !== state.selectedNonStriker;
       });
       state.selectedStriker = next ? next.id : "";
@@ -1107,8 +1128,8 @@
     }
 
     function createOrResetMatch() {
-      const team0 = $("team1Name").value.trim() || "Team 1";
-      const team1 = $("team2Name").value.trim() || "Team 2";
+      const team0 = $("team1Name").value.trim();
+      const team1 = $("team2Name").value.trim();
       const overs = Math.max(1, Number($("totalOvers").value) || 20);
       const battingTeam = Number($("battingTeamSelect").value);
       const bowlingTeam = Number($("bowlingTeamSelect").value);
@@ -1205,7 +1226,7 @@
 
     function renderPlayerLists() {
       state.teams.forEach((team, index) => {
-        $(`team${index}Title`).textContent = team.name;
+        $(`team${index}Title`).textContent = teamName(index);
         $(`team${index}Count`).textContent = `${team.players.length}/11`;
         const list = $(`team${index}Players`);
         list.innerHTML = team.players.length
@@ -1291,7 +1312,7 @@
       const players = state.teams[inning.battingTeam].players;
       $("battingCardTeam").textContent = teamName(inning.battingTeam);
       tbody.innerHTML = players.length ? players.map((player) => {
-        const stat = getBattingStat(player.id, inning);
+        const stat = readBattingStat(player.id, inning);
         const strikeRate = stat.balls ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
         const status = stat.out ? "Out" : "Not Out";
         return `
@@ -1320,7 +1341,7 @@
       const players = state.teams[inning.bowlingTeam].players;
       $("bowlingCardTeam").textContent = teamName(inning.bowlingTeam);
       tbody.innerHTML = players.length ? players.map((player) => {
-        const stat = getBowlingStat(player.id, inning);
+        const stat = readBowlingStat(player.id, inning);
         const economy = stat.balls ? (stat.runs / (stat.balls / 6)).toFixed(2) : "0.00";
         return `
           <tr>
@@ -1350,12 +1371,12 @@
       $("team1Name").value = state.teams[0].name;
       $("team2Name").value = state.teams[1].name;
       $("totalOvers").value = state.totalOvers;
-      $("summaryTeam0Name").textContent = state.teams[0].name;
-      $("summaryTeam1Name").textContent = state.teams[1].name;
-      $("battingTeamSelect").options[0].textContent = state.teams[0].name;
-      $("battingTeamSelect").options[1].textContent = state.teams[1].name;
-      $("bowlingTeamSelect").options[0].textContent = state.teams[1].name;
-      $("bowlingTeamSelect").options[1].textContent = state.teams[0].name;
+      $("summaryTeam0Name").textContent = teamName(0);
+      $("summaryTeam1Name").textContent = teamName(1);
+      $("battingTeamSelect").options[0].textContent = teamName(0);
+      $("battingTeamSelect").options[1].textContent = teamName(1);
+      $("bowlingTeamSelect").options[0].textContent = teamName(1);
+      $("bowlingTeamSelect").options[1].textContent = teamName(0);
     }
 
     function render() {
@@ -1445,7 +1466,7 @@
 
     ["team1Name", "team2Name"].forEach((id, index) => {
       $(id).addEventListener("input", (event) => {
-        state.teams[index].name = event.target.value.trim() || `Team ${index + 1}`;
+        state.teams[index].name = event.target.value;
         renderSetupNames();
         renderPlayerLists();
         renderSummary();
