@@ -24,7 +24,8 @@ The app saves progress on the user device with `localStorage`. It also supports 
 - `index.html` - app markup
 - `styles.css` - styling and responsive layout
 - `script.js` - scoring logic, local save, and live PIN sync
-- `DEPLOYMENT.md` - hosting and Firebase setup notes
+- `DEPLOYMENT.md` - hosting, Firebase Auth, and Firestore setup notes
+- `firestore.rules` - Firestore security rules for PIN sharing
 
 ## Run Locally
 

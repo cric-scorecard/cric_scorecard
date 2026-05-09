@@ -1,5 +1,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
+  getAuth,
+  onAuthStateChanged,
+  signInAnonymously
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
   doc,
   getDoc,
   getFirestore,
@@ -21,6 +26,7 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const CLOUD_SYNC_INTERVAL_MS = 2500;
 const CLOUD_SAVE_DEBOUNCE_MS = 500;
@@ -38,6 +44,13 @@ let syncTimer = null;
 let cloudSaveTimer = null;
 let applyingRemoteState = false;
 let lastRemoteUpdatedAt = 0;
+let currentUserUid = "";
+let cloudOwnerUid = "";
+
+onAuthStateChanged(auth, (user) => {
+  currentUserUid = user?.uid || "";
+  renderCloudControls();
+});
 
 function createDefaultState() {
   return {
@@ -95,6 +108,21 @@ function matchCloudRef(pin = cloudPin) {
   return doc(db, "matches", String(pin));
 }
 
+async function ensureSignedIn() {
+  if (auth.currentUser) {
+    currentUserUid = auth.currentUser.uid;
+    return currentUserUid;
+  }
+
+  const credential = await signInAnonymously(auth);
+  currentUserUid = credential.user.uid;
+  return currentUserUid;
+}
+
+function canEditOnlineMatch() {
+  return Boolean(!cloudPin || (cloudOwnerUid && currentUserUid === cloudOwnerUid));
+}
+
 function updateSyncStatus(message) {
   const status = $("syncStatus");
   if (status) status.textContent = message;
@@ -107,7 +135,8 @@ function updateSyncStatus(message) {
 function cloudReadyMessage() {
   if (!isCloudConfigured()) return "Local only. Firebase is not configured.";
   if (!cloudPin) return "Create or join a PIN to share and edit this scorecard live.";
-  return `Live sharing is active for PIN ${cloudPin}. Other devices can view and edit with this PIN.`;
+  if (canEditOnlineMatch()) return `Live editing is active for PIN ${cloudPin}. Other devices can view with this PIN.`;
+  return `Viewing PIN ${cloudPin}. Only the creator device can edit the shared scorecard.`;
 }
 
 function exportCloudState() {
@@ -124,16 +153,28 @@ function scheduleCloudSave() {
 
 async function saveMatchToCloud() {
   if (!cloudPin || !isCloudConfigured() || applyingRemoteState) return;
-
-  const updatedAt = Date.now();
-  const payload = {
-    pin: cloudPin,
-    updatedAt,
-    state: exportCloudState()
-  };
+  if (!cloudOwnerUid) {
+    updateSyncStatus(`Loading edit permissions for PIN ${cloudPin}.`);
+    return;
+  }
 
   try {
+    const uid = await ensureSignedIn();
+    if (cloudOwnerUid && uid !== cloudOwnerUid) {
+      updateSyncStatus(`Viewing PIN ${cloudPin}. Shared edits are locked to the creator device.`);
+      return;
+    }
+
+    const updatedAt = Date.now();
+    const payload = {
+      pin: cloudPin,
+      ownerUid: cloudOwnerUid || uid,
+      updatedAt,
+      state: exportCloudState()
+    };
+
     await setDoc(matchCloudRef(), payload);
+    cloudOwnerUid = payload.ownerUid;
     lastRemoteUpdatedAt = updatedAt;
     updateSyncStatus(`Saved online under PIN ${cloudPin}.`);
   } catch (error) {
@@ -161,6 +202,10 @@ function applyRemoteState(remoteState, updatedAt = Date.now()) {
   }
 }
 
+function rememberCloudOwner(ownerUid) {
+  cloudOwnerUid = typeof ownerUid === "string" ? ownerUid : "";
+}
+
 async function loadMatchFromCloud(pin) {
   const normalizedPin = String(pin || "").replace(/\D/g, "").slice(0, 4);
   if (!/^\d{4}$/.test(normalizedPin)) {
@@ -179,11 +224,13 @@ async function loadMatchFromCloud(pin) {
       return;
     }
 
+    await ensureSignedIn();
     cloudPin = normalizedPin;
+    rememberCloudOwner(remote.ownerUid);
     localStorage.setItem(CLOUD_PIN_STORAGE_KEY, cloudPin);
     applyRemoteState(remote.state, remote.updatedAt);
     startCloudPolling();
-    updateSyncStatus(`Joined online match with PIN ${cloudPin}.`);
+    updateSyncStatus(cloudReadyMessage());
   } catch (error) {
     console.error(error);
     updateSyncStatus("Unable to join PIN. Check internet and Firestore rules.");
@@ -196,6 +243,7 @@ async function createOnlineMatch() {
     return;
   }
 
+  const uid = await ensureSignedIn();
   for (let attempt = 0; attempt < 25; attempt += 1) {
     const candidatePin = String(Math.floor(1000 + Math.random() * 9000));
     try {
@@ -203,6 +251,7 @@ async function createOnlineMatch() {
       if (existing) continue;
 
       cloudPin = candidatePin;
+      cloudOwnerUid = uid;
       localStorage.setItem(CLOUD_PIN_STORAGE_KEY, cloudPin);
       await saveMatchToCloud();
       startCloudPolling();
@@ -225,6 +274,7 @@ async function pollCloudMatch() {
   try {
     const remote = await fetchCloudMatch(cloudPin);
     if (!remote?.state) return;
+    rememberCloudOwner(remote.ownerUid);
     const remoteUpdatedAt = Number(remote.updatedAt) || 0;
     if (remoteUpdatedAt > lastRemoteUpdatedAt) {
       applyRemoteState(remote.state, remoteUpdatedAt);
@@ -245,6 +295,7 @@ function startCloudPolling() {
 
 function leaveOnlineMatch() {
   cloudPin = "";
+  cloudOwnerUid = "";
   lastRemoteUpdatedAt = 0;
   clearInterval(syncTimer);
   clearTimeout(cloudSaveTimer);
@@ -579,6 +630,7 @@ function validateCurrentSelections() {
 
 function scoreReadinessMessage() {
   const inning = currentInnings();
+  if (!canEditOnlineMatch()) return "View-only shared scorecard. Only the creator device can edit.";
   if (!state.matchStarted) return "Create a match and select striker, non-striker, and bowler";
   if (state.matchComplete) return "Match finished";
   if (!inning) return "Create a match to begin scoring";
@@ -608,6 +660,7 @@ function canScore() {
   return Boolean(
     state.matchStarted &&
     !state.matchComplete &&
+    canEditOnlineMatch() &&
     state.selectedStriker &&
     state.selectedNonStriker &&
     state.selectedBowler &&
@@ -1411,12 +1464,16 @@ function renderBowlingTable() {
 
 function renderControls() {
   const scoringReady = canScore();
+  const canEdit = canEditOnlineMatch();
 
   document.querySelectorAll("[data-run], [data-extra], #wicketBtn, #endInningsBtn").forEach((button) => {
-    button.disabled = !state.matchStarted || state.matchComplete || (!scoringReady && button.id !== "endInningsBtn");
+    button.disabled = !canEdit || !state.matchStarted || state.matchComplete || (!scoringReady && button.id !== "endInningsBtn");
   });
-  $("undoBtn").disabled = !state.history.length;
-  $("swapStrikeBtn").disabled = !state.matchStarted || state.matchComplete || !state.selectedStriker || !state.selectedNonStriker;
+  $("undoBtn").disabled = !canEdit || !state.history.length;
+  $("swapStrikeBtn").disabled = !canEdit || !state.matchStarted || state.matchComplete || !state.selectedStriker || !state.selectedNonStriker;
+  document.querySelectorAll("[data-add-player], #createMatchBtn, #resetMatchBtn").forEach((button) => {
+    button.disabled = !canEdit;
+  });
   if (scoringReady) {
     const inning = currentInnings();
     const oneBowlerNotice = inning && inning.previousBowler && inning.legalBalls > 0 && inning.legalBalls % 6 === 0 && state.teams[inning.bowlingTeam].players.length === 1

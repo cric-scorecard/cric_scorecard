@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isFourDigitPin(pin) {
+      return pin.matches('^[0-9]{4}$');
+    }
+
+    function hasValidMatchShape() {
+      return request.resource.data.keys().hasOnly([
+        'pin',
+        'ownerUid',
+        'updatedAt',
+        'state'
+      ]) &&
+      request.resource.data.pin is string &&
+      request.resource.data.ownerUid is string &&
+      request.resource.data.updatedAt is number &&
+      request.resource.data.state is map;
+    }
+
+    match /matches/{pin} {
+      allow get: if isFourDigitPin(pin);
+      allow list: if false;
+
+      allow create: if request.auth != null &&
+        isFourDigitPin(pin) &&
+        hasValidMatchShape() &&
+        request.resource.data.pin == pin &&
+        request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if request.auth != null &&
+        isFourDigitPin(pin) &&
+        hasValidMatchShape() &&
+        resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.pin == resource.data.pin;
+
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
