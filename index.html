@@ -773,6 +773,7 @@
             <button class="score-btn extra" data-extra="bye">Bye</button>
             <button class="score-btn extra" data-extra="legBye">Leg Bye</button>
             <button class="score-btn wicket" id="wicketBtn">Wicket</button>
+            <button class="score-btn" id="swapStrikeBtn">Swap Strike</button>
             <button class="score-btn" id="undoBtn">Undo</button>
           </div>
           <div class="button-row">
@@ -1224,7 +1225,8 @@
       }
       if (role !== "batter") return true;
       const stat = readBattingStat(playerId, inning);
-      return !stat.out && !stat.retired;
+      // Retired-hurt batters are not out, so allow them to be selected again.
+      return !stat.out;
     }
 
     function validateCurrentSelections() {
@@ -1257,7 +1259,7 @@
       if (state.matchComplete) return "Match finished";
       if (!inning) return "Create a match to begin scoring";
 
-      const availableBatters = state.teams[inning.battingTeam].players.filter((player) => { const stat = readBattingStat(player.id, inning); return !stat.out && !stat.retired; });
+      const availableBatters = state.teams[inning.battingTeam].players.filter((player) => !readBattingStat(player.id, inning).out);
       const bowlers = state.teams[inning.bowlingTeam].players;
 
       if (inning.legalBalls >= state.totalOvers * 6) return "Overs complete. End the innings to continue.";
@@ -1307,14 +1309,38 @@
       state.selectedNonStriker = current;
     }
 
+    function manualSwapStrike() {
+      if (!state.matchStarted || state.matchComplete || !state.selectedStriker || !state.selectedNonStriker) return;
+      saveHistory();
+      swapStrike();
+      render();
+    }
+
+    function returnRetiredBatterIfSelected(playerId) {
+      const inning = currentInnings();
+      if (!inning || !playerId) return;
+      const stat = getBattingStat(playerId, inning);
+      if (stat.retired && !stat.out) {
+        stat.retired = false;
+        addTimeline("info", `${playerName(playerId)} returns to the crease`, oversText(inning.legalBalls));
+      }
+    }
+
     function selectNextBatter() {
       const inning = currentInnings();
       const battingTeam = state.teams[inning.battingTeam];
-      const next = battingTeam.players.find((player) => {
+      const nextActive = battingTeam.players.find((player) => {
         const stat = readBattingStat(player.id, inning);
         return !stat.out && !stat.retired && player.id !== state.selectedNonStriker;
       });
-      state.selectedStriker = next ? next.id : "";
+      const returningRetired = battingTeam.players.find((player) => {
+        const stat = readBattingStat(player.id, inning);
+        return !stat.out && stat.retired && player.id !== state.selectedNonStriker;
+      });
+      state.selectedStriker = nextActive ? nextActive.id : returningRetired ? returningRetired.id : "";
+      if (returningRetired && state.selectedStriker === returningRetired.id) {
+        getBattingStat(returningRetired.id, inning).retired = false;
+      }
     }
 
     // Legal balls advance the over, update bowler figures, and handle strike changes.
@@ -1500,8 +1526,8 @@
       return ["bowled", "caught", "lbw", "stumped", "hitWicket"].includes(type);
     }
 
-    function dismissalText(stat) {
-      if (stat.retired) return "Retired hurt";
+    function dismissalText(stat, playerId = "") {
+      if (stat.retired && playerId !== state.selectedStriker && playerId !== state.selectedNonStriker) return "Retired hurt";
       if (!stat.out) return "Not Out";
 
       const type = stat.dismissal || "out";
@@ -1661,7 +1687,7 @@
       if (!inning) return;
       const batters = state.teams[inning.battingTeam].players;
       const bowlers = state.teams[inning.bowlingTeam].players;
-      const availableBatters = batters.filter((player) => { const stat = readBattingStat(player.id, inning); return !stat.out && !stat.retired; });
+      const availableBatters = batters.filter((player) => !readBattingStat(player.id, inning).out);
       const availableBowlers = bowlers.filter((player) => selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler"));
 
       if (!state.selectedStriker && availableBatters[0]) state.selectedStriker = availableBatters[0].id;
@@ -1739,8 +1765,8 @@
         const isOut = role === "batter" && batterStat.out;
         const isRetired = role === "batter" && batterStat.retired;
         const bowledPreviousOver = role === "bowler" && !selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler");
-        const disabled = isOut || isRetired || bowledPreviousOver ? "disabled" : "";
-        const status = isOut ? " (Out)" : isRetired ? " (Retired)" : bowledPreviousOver ? " (Previous over)" : "";
+        const disabled = isOut || bowledPreviousOver ? "disabled" : "";
+        const status = isOut ? " (Out)" : isRetired ? " (Retired - can return)" : bowledPreviousOver ? " (Previous over)" : "";
         options.push(`<option value="${player.id}" ${selected} ${disabled}>${escapeHtml(player.name)}${status}</option>`);
       });
       return options.join("");
@@ -1883,11 +1909,12 @@
       $("battingCardTeam").textContent = teamName(inning.battingTeam);
       tbody.innerHTML = players.length ? players.map((player) => {
         const stat = readBattingStat(player.id, inning);
-        const strikeRate = stat.balls ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
-        const status = dismissalText(stat);
+        const strikeRate = stat.balls > 0 ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
+        const status = dismissalText(stat, player.id);
+        const strikeMark = player.id === state.selectedStriker ? " *" : player.id === state.selectedNonStriker ? " †" : "";
         return `
           <tr>
-            <td>${escapeHtml(player.name)}</td>
+            <td>${escapeHtml(player.name)}${strikeMark}</td>
             <td>${stat.runs}</td>
             <td>${stat.balls}</td>
             <td>${stat.fours}</td>
@@ -1912,7 +1939,7 @@
       $("bowlingCardTeam").textContent = teamName(inning.bowlingTeam);
       tbody.innerHTML = players.length ? players.map((player) => {
         const stat = readBowlingStat(player.id, inning);
-        const economy = stat.balls ? (stat.runs / (stat.balls / 6)).toFixed(2) : "0.00";
+        const economy = stat.balls > 0 ? (stat.runs / (stat.balls / 6)).toFixed(2) : "0.00";
         return `
           <tr>
             <td>${escapeHtml(player.name)}</td>
@@ -1935,6 +1962,7 @@
         button.disabled = !state.matchStarted || state.matchComplete || (!scoringReady && button.id !== "endInningsBtn");
       });
       $("undoBtn").disabled = !state.history.length;
+      $("swapStrikeBtn").disabled = !state.matchStarted || state.matchComplete || !state.selectedStriker || !state.selectedNonStriker;
       if (scoringReady) {
         scoreHint.textContent = `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling`;
       } else {
@@ -2089,12 +2117,14 @@
 
     $("strikerSelect").addEventListener("change", (event) => {
       state.selectedStriker = event.target.value;
+      returnRetiredBatterIfSelected(state.selectedStriker);
       validateCurrentSelections();
       render();
     });
 
     $("nonStrikerSelect").addEventListener("change", (event) => {
       state.selectedNonStriker = event.target.value;
+      returnRetiredBatterIfSelected(state.selectedNonStriker);
       validateCurrentSelections();
       render();
     });
