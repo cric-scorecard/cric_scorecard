@@ -316,6 +316,11 @@
       gap: 10px;
     }
 
+    .extra-run-control {
+      max-width: 220px;
+      margin-bottom: 12px;
+    }
+
     .score-btn {
       min-height: 58px;
       color: var(--navy);
@@ -646,6 +651,17 @@
             <h2>4. Live Scoring</h2>
             <span class="hint" id="scoreHint">Select players to score</span>
           </div>
+          <div class="field extra-run-control">
+            <label for="extraRunsSelect">Extra Runs</label>
+            <select id="extraRunsSelect">
+              <option value="1">1 run</option>
+              <option value="2">2 runs</option>
+              <option value="3">3 runs</option>
+              <option value="4">4 runs</option>
+              <option value="5">5 runs</option>
+              <option value="6">6 runs</option>
+            </select>
+          </div>
           <div class="score-buttons">
             <button class="score-btn" data-run="0">0</button>
             <button class="score-btn" data-run="1">1</button>
@@ -887,6 +903,12 @@
 
     function rate(runs, balls) {
       return balls > 0 ? (runs / (balls / 6)).toFixed(2) : "0.00";
+    }
+
+    function selectedExtraRuns() {
+      const runs = Number($("extraRunsSelect").value);
+      if (!Number.isFinite(runs)) return 1;
+      return Math.min(6, Math.max(1, Math.trunc(runs)));
     }
 
     function createPlayer(name, teamIndex) {
@@ -1158,38 +1180,42 @@
       const inning = currentInnings();
       const bowler = getBowlingStat(state.selectedBowler, inning);
       const label = nextBallLabel(inning);
+      const extraRuns = selectedExtraRuns();
       const extraLabels = {
         wide: "Wide",
         noBall: "No Ball",
         bye: "Bye",
         legBye: "Leg Bye"
       };
+      const runWord = extraRuns === 1 ? "run" : "runs";
 
-      inning.runs += 1;
+      inning.runs += extraRuns;
 
       // Wides and no-balls add runs but do not consume a legal ball.
       if (type === "wide") {
-        inning.extras.wides += 1;
-        bowler.runs += 1;
-        bowler.currentOverRuns += 1;
-        addTimeline("extra", `${extraLabels[type]}: 1 extra run`, label);
+        inning.extras.wides += extraRuns;
+        bowler.runs += extraRuns;
+        bowler.currentOverRuns += extraRuns;
+        if ((extraRuns - 1) % 2 === 1) swapStrike();
+        addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
       }
 
       if (type === "noBall") {
-        inning.extras.noBalls += 1;
-        bowler.runs += 1;
-        bowler.currentOverRuns += 1;
-        addTimeline("extra", `${extraLabels[type]}: 1 extra run`, label);
+        inning.extras.noBalls += extraRuns;
+        bowler.runs += extraRuns;
+        bowler.currentOverRuns += extraRuns;
+        if ((extraRuns - 1) % 2 === 1) swapStrike();
+        addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
       }
 
       // Byes and leg byes consume a ball, but they are not charged to the bowler.
       if (type === "bye" || type === "legBye") {
         const batter = getBattingStat(state.selectedStriker, inning);
         batter.balls += 1;
-        if (type === "bye") inning.extras.byes += 1;
-        if (type === "legBye") inning.extras.legByes += 1;
-        addTimeline("extra", `${extraLabels[type]}: 1 extra run`, label);
-        completeLegalBall(1);
+        if (type === "bye") inning.extras.byes += extraRuns;
+        if (type === "legBye") inning.extras.legByes += extraRuns;
+        addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
+        completeLegalBall(extraRuns);
       } else {
         checkInningsProgress();
       }
