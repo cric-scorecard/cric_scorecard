@@ -708,6 +708,7 @@
             <button class="score-btn extra" data-extra="noBall">No Ball</button>
             <button class="score-btn extra" data-extra="bye">Bye</button>
             <button class="score-btn extra" data-extra="legBye">Leg Bye</button>
+            <button class="score-btn extra" data-extra="overthrow">Overthrow</button>
             <button class="score-btn wicket" id="wicketBtn">Wicket</button>
             <button class="score-btn" id="undoBtn">Undo</button>
           </div>
@@ -818,7 +819,8 @@
       wide: "Wide",
       noBall: "No Ball",
       bye: "Bye",
-      legBye: "Leg Bye"
+      legBye: "Leg Bye",
+      overthrow: "Overthrow"
     };
     let skipNextSave = false;
     let pendingExtraType = "";
@@ -910,7 +912,8 @@
           wides: Math.max(0, Number(inning.extras?.wides) || 0),
           noBalls: Math.max(0, Number(inning.extras?.noBalls) || 0),
           byes: Math.max(0, Number(inning.extras?.byes) || 0),
-          legByes: Math.max(0, Number(inning.extras?.legByes) || 0)
+          legByes: Math.max(0, Number(inning.extras?.legByes) || 0),
+          overthrows: Math.max(0, Number(inning.extras?.overthrows) || 0)
         },
         previousBowler: typeof inning.previousBowler === "string" ? inning.previousBowler : "",
         batting: inning.batting && typeof inning.batting === "object" ? inning.batting : {},
@@ -972,7 +975,7 @@
         runs: 0,
         wickets: 0,
         legalBalls: 0,
-        extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+        extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0, overthrows: 0 },
         previousBowler: "",
         batting: {},
         bowling: {},
@@ -1229,7 +1232,7 @@
       $("extraPopupTitle").textContent = `${extraLabels[type]} Runs`;
       $("extraPopupHelp").textContent = isPenaltyExtra
         ? "1 penalty run is added automatically. Select any additional runs completed."
-        : "Select the total byes or leg byes completed on this legal delivery.";
+        : "Select the total runs completed on this legal delivery.";
       $("extraRunButtons").innerHTML = runOptions.map((runs) => {
         const label = isPenaltyExtra && runs === 0 ? "Penalty only" : `${runs} run${runs === 1 ? "" : "s"}`;
         return `<button data-extra-run-choice="${runs}">${label}</button>`;
@@ -1273,12 +1276,13 @@
         addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
       }
 
-      // Byes and leg byes consume a ball, but they are not charged to the bowler.
-      if (type === "bye" || type === "legBye") {
+      // Byes, leg byes, and this simple overthrow button consume a ball, but they are not charged to the bowler.
+      if (type === "bye" || type === "legBye" || type === "overthrow") {
         const batter = getBattingStat(state.selectedStriker, inning);
         batter.balls += 1;
         if (type === "bye") inning.extras.byes += extraRuns;
         if (type === "legBye") inning.extras.legByes += extraRuns;
+        if (type === "overthrow") inning.extras.overthrows += extraRuns;
         addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
         completeLegalBall(extraRuns);
       } else {
@@ -1451,7 +1455,7 @@
 
     function extrasTotal(inning) {
       if (!inning) return 0;
-      return inning.extras.wides + inning.extras.noBalls + inning.extras.byes + inning.extras.legByes;
+      return inning.extras.wides + inning.extras.noBalls + inning.extras.byes + inning.extras.legByes + (inning.extras.overthrows || 0);
     }
 
     function requiredRate() {
