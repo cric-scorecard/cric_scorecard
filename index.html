@@ -522,6 +522,54 @@
       font-size: 0.82rem;
     }
 
+    .cloud-panel {
+      margin-top: 14px;
+      padding: 14px;
+      background: #fbfdfc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .cloud-panel h3 {
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 0.98rem;
+    }
+
+    .cloud-grid {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .pin-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      color: var(--white);
+      background: var(--navy);
+      border-radius: 8px;
+      font-size: 1.25rem;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+    }
+
+    .sync-status {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 700px) {
+      .cloud-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -621,6 +669,25 @@
       scrollbar-color: var(--line) transparent;
     }
 
+
+
+    .free-hit-badge {
+      display: inline-flex;
+      width: max-content;
+      margin-top: 10px;
+      padding: 7px 10px;
+      color: var(--navy);
+      background: var(--amber);
+      border-radius: 8px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .quota-warning {
+      background: #fff8e6;
+      border-left: 4px solid var(--amber);
+    }
+
     @media (max-width: 980px) {
       .topbar,
       .grid {
@@ -685,6 +752,7 @@
           <div class="score-value" id="scoreValue">0/0</div>
         </div>
         <div class="score-context" id="scoreContext">Set up a match to begin scoring.</div>
+        <div class="free-hit-badge" id="freeHitBadge" hidden>FREE HIT</div>
       </div>
       <div class="metric">
         <span>Overs</span>
@@ -750,6 +818,24 @@
           </div>
           <div class="button-row">
             <button class="primary-btn" id="createMatchBtn">Create / Reset Match</button>
+          </div>
+
+          <div class="cloud-panel" aria-label="Shared online scorecard">
+            <h3>Share Scorecard</h3>
+            <div class="cloud-grid">
+              <div class="field">
+                <label for="joinPinInput">4-digit PIN</label>
+                <input id="joinPinInput" inputmode="numeric" maxlength="4" placeholder="Enter PIN" autocomplete="off" />
+              </div>
+              <button class="secondary-btn" id="createOnlineMatchBtn">Create PIN</button>
+              <button class="ghost-btn" id="joinOnlineMatchBtn">Join PIN</button>
+            </div>
+            <div class="button-row">
+              <span class="pin-pill" id="activePinValue">----</span>
+              <button class="ghost-btn" id="copyPinBtn">Copy PIN</button>
+              <button class="danger-btn" id="leaveOnlineMatchBtn">Leave Online</button>
+            </div>
+            <div class="sync-status" id="syncStatus">Local only. Add Firebase URL in code to enable online sharing.</div>
           </div>
         </section>
 
@@ -856,6 +942,14 @@
             <div class="summary-box">
               <span>Result</span>
               <strong id="summaryResult">Match not finished</strong>
+            </div>
+            <div class="summary-box">
+              <span id="summaryTeam0BoundaryName">Team 1 Boundaries</span>
+              <strong id="summaryTeam0Boundaries">4s: 0 | 6s: 0</strong>
+            </div>
+            <div class="summary-box">
+              <span id="summaryTeam1BoundaryName">Team 2 Boundaries</span>
+              <strong id="summaryTeam1Boundaries">4s: 0 | 6s: 0</strong>
             </div>
           </div>
 
@@ -975,6 +1069,14 @@
       <h3 id="wicketPopupTitle">Wicket Details</h3>
       <p class="small-note">Choose how the batter got out. Bowler credit is applied only for dismissals that count for the bowler.</p>
       <div class="field">
+        <label for="wicketDeliveryTypeSelect">Delivery Type</label>
+        <select id="wicketDeliveryTypeSelect">
+          <option value="legal">Legal Delivery</option>
+          <option value="wide">Wide + Wicket</option>
+          <option value="noBall">No Ball + Wicket</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top: 12px;">
         <label for="dismissalTypeSelect">Dismissal Type</label>
         <select id="dismissalTypeSelect">
           <option value="bowled">Bowled</option>
@@ -984,6 +1086,7 @@
           <option value="hitWicket">Hit Wicket</option>
           <option value="runOut">Run Out</option>
           <option value="retiredHurt">Retired Hurt</option>
+          <option value="retiredOut">Retired Out</option>
         </select>
       </div>
       <div class="field" style="margin-top: 12px;">
@@ -999,7 +1102,17 @@
 
   <script>
     const STORAGE_KEY = "cricketScorecardMatch";
+    const CLOUD_PIN_STORAGE_KEY = "cricketScorecardCloudPin";
     const MAX_UNDO_HISTORY = 120;
+
+    // Free shared storage option for GitHub Pages:
+    // 1. Create a Firebase Realtime Database project.
+    // 2. Paste your database URL below, for example:
+    //    https://your-project-id-default-rtdb.firebaseio.com
+    // 3. Deploy this HTML file to GitHub Pages.
+    const FIREBASE_DATABASE_URL = "";
+    const CLOUD_SYNC_INTERVAL_MS = 2500;
+    const CLOUD_SAVE_DEBOUNCE_MS = 500;
     const extraLabels = {
       wide: "Wide",
       noBall: "No Ball",
@@ -1009,6 +1122,11 @@
     let skipNextSave = false;
     let pendingExtraType = "";
     let pendingRunValue = null;
+    let cloudPin = localStorage.getItem(CLOUD_PIN_STORAGE_KEY) || "";
+    let syncTimer = null;
+    let cloudSaveTimer = null;
+    let applyingRemoteState = false;
+    let lastRemoteUpdatedAt = 0;
 
     function createDefaultState() {
       return {
@@ -1031,7 +1149,7 @@
       };
     }
 
-    // All match data lives here so the app can run without a backend.
+    // Match data lives here. It can stay local, or sync to Firebase when a PIN is active.
     const state = createDefaultState();
 
     const $ = (id) => document.getElementById(id);
@@ -1052,6 +1170,200 @@
       } catch (error) {
         console.warn("Unable to save match data locally.", error);
       }
+
+      if (cloudPin && isCloudConfigured() && !applyingRemoteState) {
+        scheduleCloudSave();
+      }
+    }
+
+    function isCloudConfigured() {
+      return Boolean(FIREBASE_DATABASE_URL && FIREBASE_DATABASE_URL.trim());
+    }
+
+    function cleanDatabaseUrl() {
+      return FIREBASE_DATABASE_URL.trim().replace(/\/+$/, "");
+    }
+
+    function matchCloudUrl(pin = cloudPin) {
+      return `${cleanDatabaseUrl()}/matches/${pin}.json`;
+    }
+
+    function updateSyncStatus(message) {
+      const status = $("syncStatus");
+      if (status) status.textContent = message;
+      const pinValue = $("activePinValue");
+      if (pinValue) pinValue.textContent = cloudPin || "----";
+      const joinInput = $("joinPinInput");
+      if (joinInput && cloudPin && joinInput.value !== cloudPin) joinInput.value = cloudPin;
+    }
+
+    function cloudReadyMessage() {
+      if (!isCloudConfigured()) return "Local only. Add your Firebase Realtime Database URL in FIREBASE_DATABASE_URL to enable PIN sharing.";
+      if (!cloudPin) return "Online database ready. Create a PIN or join an existing match.";
+      return `Online sync active for PIN ${cloudPin}. Other devices can join with this PIN.`;
+    }
+
+    function exportCloudState() {
+      const cloned = JSON.parse(JSON.stringify(state));
+      cloned.history = [];
+      cloned.viewingInningsIndex = null;
+      return cloned;
+    }
+
+    function scheduleCloudSave() {
+      clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = setTimeout(saveMatchToCloud, CLOUD_SAVE_DEBOUNCE_MS);
+    }
+
+    async function saveMatchToCloud() {
+      if (!cloudPin || !isCloudConfigured() || applyingRemoteState) return;
+
+      const updatedAt = Date.now();
+      const payload = {
+        pin: cloudPin,
+        updatedAt,
+        state: exportCloudState()
+      };
+
+      try {
+        const response = await fetch(matchCloudUrl(), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new Error(`Firebase save failed: ${response.status}`);
+        lastRemoteUpdatedAt = updatedAt;
+        updateSyncStatus(`Saved online under PIN ${cloudPin}.`);
+      } catch (error) {
+        console.error(error);
+        updateSyncStatus("Online save failed. Check Firebase URL/rules, then try again.");
+      }
+    }
+
+    async function fetchCloudMatch(pin) {
+      const response = await fetch(matchCloudUrl(pin));
+      if (!response.ok) throw new Error(`Firebase load failed: ${response.status}`);
+      return response.json();
+    }
+
+    function applyRemoteState(remoteState, updatedAt = Date.now()) {
+      applyingRemoteState = true;
+      try {
+        Object.keys(state).forEach((key) => delete state[key]);
+        Object.assign(state, createDefaultState(), remoteState);
+        state.viewingInningsIndex = null;
+        normalizeLoadedState();
+        lastRemoteUpdatedAt = Math.max(lastRemoteUpdatedAt, Number(updatedAt) || Date.now());
+        render();
+      } finally {
+        applyingRemoteState = false;
+      }
+    }
+
+    async function loadMatchFromCloud(pin) {
+      const normalizedPin = String(pin || "").replace(/\D/g, "").slice(0, 4);
+      if (!/^\d{4}$/.test(normalizedPin)) {
+        updateSyncStatus("Enter a valid 4-digit PIN.");
+        return;
+      }
+      if (!isCloudConfigured()) {
+        updateSyncStatus("Firebase URL is missing. Add FIREBASE_DATABASE_URL in the code first.");
+        return;
+      }
+
+      try {
+        const remote = await fetchCloudMatch(normalizedPin);
+        if (!remote?.state) {
+          updateSyncStatus(`No match found for PIN ${normalizedPin}.`);
+          return;
+        }
+
+        cloudPin = normalizedPin;
+        localStorage.setItem(CLOUD_PIN_STORAGE_KEY, cloudPin);
+        applyRemoteState(remote.state, remote.updatedAt);
+        startCloudPolling();
+        updateSyncStatus(`Joined online match with PIN ${cloudPin}.`);
+      } catch (error) {
+        console.error(error);
+        updateSyncStatus("Unable to join PIN. Check Firebase URL, internet, and database rules.");
+      }
+    }
+
+    async function createOnlineMatch() {
+      if (!isCloudConfigured()) {
+        updateSyncStatus("Firebase URL is missing. Add FIREBASE_DATABASE_URL in the code first.");
+        return;
+      }
+
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        const candidatePin = String(Math.floor(1000 + Math.random() * 9000));
+        try {
+          const existing = await fetchCloudMatch(candidatePin);
+          if (existing) continue;
+
+          cloudPin = candidatePin;
+          localStorage.setItem(CLOUD_PIN_STORAGE_KEY, cloudPin);
+          await saveMatchToCloud();
+          startCloudPolling();
+          updateSyncStatus(`Created online match. Share PIN ${cloudPin}.`);
+          renderCloudControls();
+          return;
+        } catch (error) {
+          console.error(error);
+          updateSyncStatus("Unable to create PIN. Check Firebase URL/rules, then try again.");
+          return;
+        }
+      }
+
+      updateSyncStatus("Could not find an unused 4-digit PIN. Try again.");
+    }
+
+    async function pollCloudMatch() {
+      if (!cloudPin || !isCloudConfigured() || applyingRemoteState) return;
+
+      try {
+        const remote = await fetchCloudMatch(cloudPin);
+        if (!remote?.state) return;
+        const remoteUpdatedAt = Number(remote.updatedAt) || 0;
+        if (remoteUpdatedAt > lastRemoteUpdatedAt) {
+          applyRemoteState(remote.state, remoteUpdatedAt);
+          updateSyncStatus(`Loaded latest online update for PIN ${cloudPin}.`);
+        }
+      } catch (error) {
+        console.warn("Cloud polling failed.", error);
+      }
+    }
+
+    function startCloudPolling() {
+      clearInterval(syncTimer);
+      if (cloudPin && isCloudConfigured()) {
+        syncTimer = setInterval(pollCloudMatch, CLOUD_SYNC_INTERVAL_MS);
+      }
+      renderCloudControls();
+    }
+
+    function leaveOnlineMatch() {
+      cloudPin = "";
+      lastRemoteUpdatedAt = 0;
+      clearInterval(syncTimer);
+      clearTimeout(cloudSaveTimer);
+      localStorage.removeItem(CLOUD_PIN_STORAGE_KEY);
+      renderCloudControls();
+      updateSyncStatus(cloudReadyMessage());
+    }
+
+    function renderCloudControls() {
+      updateSyncStatus(cloudReadyMessage());
+      const createBtn = $("createOnlineMatchBtn");
+      const joinBtn = $("joinOnlineMatchBtn");
+      const copyBtn = $("copyPinBtn");
+      const leaveBtn = $("leaveOnlineMatchBtn");
+      [createBtn, joinBtn].forEach((button) => {
+        if (button) button.disabled = !isCloudConfigured();
+      });
+      if (copyBtn) copyBtn.disabled = !cloudPin;
+      if (leaveBtn) leaveBtn.disabled = !cloudPin;
     }
 
     function loadSavedMatch() {
@@ -1094,6 +1406,7 @@
         runs: Math.max(0, Number(inning.runs) || 0),
         wickets: Math.min(10, Math.max(0, Number(inning.wickets) || 0)),
         legalBalls: Math.max(0, Number(inning.legalBalls) || 0),
+        freeHit: Boolean(inning.freeHit),
         extras: {
           wides: Math.max(0, Number(inning.extras?.wides) || 0),
           noBalls: Math.max(0, Number(inning.extras?.noBalls) || 0),
@@ -1163,6 +1476,7 @@
         runs: 0,
         wickets: 0,
         legalBalls: 0,
+        freeHit: false,
         extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0, overthrows: 0 },
         previousBowler: "",
         batting: {},
@@ -1201,12 +1515,14 @@
           sixes: 0,
           out: false,
           retired: false,
+          retiredOut: false,
           dismissal: "",
           fielderId: "",
           bowlerId: ""
         };
       }
       inning.batting[playerId].retired = Boolean(inning.batting[playerId].retired);
+      inning.batting[playerId].retiredOut = Boolean(inning.batting[playerId].retiredOut);
       inning.batting[playerId].dismissal = inning.batting[playerId].dismissal || "";
       inning.batting[playerId].fielderId = inning.batting[playerId].fielderId || "";
       inning.batting[playerId].bowlerId = inning.batting[playerId].bowlerId || "";
@@ -1238,6 +1554,7 @@
         sixes: 0,
         out: false,
         retired: false,
+        retiredOut: false,
         dismissal: "",
         fielderId: "",
         bowlerId: ""
@@ -1286,6 +1603,36 @@
         inning.legalBalls % 6 === 0 &&
         !state.selectedBowler
       );
+    }
+
+
+    function bowlerQuotaBalls() {
+      return Math.floor((Number(state.totalOvers) || 0) * 6 / 5);
+    }
+
+    function bowlerQuotaStatus(playerId, inning = currentInnings()) {
+      const quota = bowlerQuotaBalls();
+      const stat = readBowlingStat(playerId, inning);
+      return {
+        quota,
+        reached: quota > 0 && stat.balls >= quota,
+        remaining: Math.max(0, quota - stat.balls)
+      };
+    }
+
+    function teamBoundaryStats(teamIndex) {
+      const inning = inningsForTeam(teamIndex);
+      if (!inning) return { fours: 0, sixes: 0, total: 0 };
+      return Object.values(inning.batting || {}).reduce((total, stat) => {
+        total.fours += Math.max(0, Number(stat.fours) || 0);
+        total.sixes += Math.max(0, Number(stat.sixes) || 0);
+        total.total = total.fours + total.sixes;
+        return total;
+      }, { fours: 0, sixes: 0, total: 0 });
+    }
+
+    function consumeFreeHitIfLegalDelivery(inning) {
+      if (inning) inning.freeHit = false;
     }
 
     function selectedPlayerIsAvailable(playerId, teamIndex, inning, role) {
@@ -1420,6 +1767,8 @@
       const inning = currentInnings();
       const bowlerId = state.selectedBowler;
       const bowler = getBowlingStat(bowlerId, inning);
+      const wasFreeHit = Boolean(inning.freeHit);
+
       inning.legalBalls += 1;
       bowler.balls += 1;
       const overComplete = inning.legalBalls % 6 === 0;
@@ -1436,6 +1785,10 @@
         swapStrike();
       }
 
+      if (wasFreeHit) {
+        consumeFreeHitIfLegalDelivery(inning);
+      }
+
       checkInningsProgress();
 
       if (overComplete && currentInnings() === inning && !state.matchComplete) {
@@ -1445,7 +1798,7 @@
       }
     }
 
-    function scoreRun(runs, overthrowRuns = 0) {
+    function scoreRun(runs, overthrowRuns = 0)(runs, overthrowRuns = 0) {
       if (!canScore()) return;
       saveHistory();
 
@@ -1519,8 +1872,6 @@
       const overthrow = Math.max(0, Number(overthrowRuns) || 0);
 
       if (type === "wide") {
-        // Wide is an illegal delivery. All completed/overthrow runs are wides,
-        // charged to the bowler, and the ball count does not increase.
         const totalRuns = 1 + completed + overthrow;
         inning.runs += totalRuns;
         inning.extras.wides += totalRuns;
@@ -1538,14 +1889,13 @@
       }
 
       if (type === "noBall") {
-        // No ball is an illegal delivery. The penalty is an extra; runs off the bat
-        // including overthrow are credited to the batter. All runs are charged to the bowler.
         const batterRuns = completed + overthrow;
         const totalRuns = 1 + batterRuns;
         const batter = getBattingStat(state.selectedStriker, inning);
 
         inning.runs += totalRuns;
         inning.extras.noBalls += 1;
+        inning.freeHit = true;
         bowler.noBalls += 1;
         batter.runs += batterRuns;
         batter.balls += 1;
@@ -1557,15 +1907,13 @@
         if (batterRuns % 2 === 1) swapStrike();
         addTimeline(
           "extra",
-          `No Ball: 1 penalty + ${completed} bat run${completed === 1 ? "" : "s"}${overthrow ? ` + ${overthrow} overthrow` : ""} = ${totalRuns} total`,
+          `No Ball: 1 penalty + ${completed} bat run${completed === 1 ? "" : "s"}${overthrow ? ` + ${overthrow} overthrow` : ""} = ${totalRuns} total. Free hit next ball.`,
           label
         );
         checkInningsProgress();
       }
 
       if (type === "bye" || type === "legBye") {
-        // Byes and leg byes are legal deliveries. They add to team extras,
-        // but they are not charged to the bowler and not credited to the batter.
         const totalRuns = completed + overthrow;
         const batter = getBattingStat(state.selectedStriker, inning);
 
@@ -1593,7 +1941,8 @@
         stumped: "st",
         hitWicket: "hit wicket",
         runOut: "run out",
-        retiredHurt: "retired hurt"
+        retiredHurt: "retired hurt",
+        retiredOut: "retired out"
       };
       return labels[type] || "out";
     }
@@ -1616,6 +1965,7 @@
       if (type === "stumped") return `st ${fielder || "keeper"} b ${bowler}`;
       if (type === "hitWicket") return `hit wicket b ${bowler}`;
       if (type === "runOut") return `run out${fielder ? ` (${fielder})` : ""}`;
+      if (type === "retiredOut") return "retired out";
       return "Out";
     }
 
@@ -1626,7 +1976,8 @@
       $("fielderSelect").innerHTML = '<option value="">No fielder / not applicable</option>' + fielders.map((player) => (
         `<option value="${player.id}">${escapeHtml(player.name)}</option>`
       )).join("");
-      $("dismissalTypeSelect").value = "bowled";
+      $("dismissalTypeSelect").value = inning.freeHit ? "runOut" : "bowled";
+      if ($("wicketDeliveryTypeSelect")) $("wicketDeliveryTypeSelect").value = "legal";
       $("wicketPopup").classList.add("show");
     }
 
@@ -1634,11 +1985,31 @@
       $("wicketPopup").classList.remove("show");
     }
 
-    function scoreWicket(method = "bowled", fielderId = "") {
+    function scoreWicket(method = "bowled", fielderId = "", deliveryType = "legal") {
       if (!canScore()) return;
-      saveHistory();
 
       const inning = currentInnings();
+      const isFreeHit = Boolean(inning.freeHit);
+      const legalDelivery = deliveryType === "legal";
+      const validFreeHitDismissals = ["runOut", "retiredHurt", "retiredOut"];
+      const validNoBallDismissals = ["runOut", "retiredHurt", "retiredOut"];
+      const validWideDismissals = ["stumped", "runOut", "retiredHurt", "retiredOut"];
+
+      if (isFreeHit && !validFreeHitDismissals.includes(method)) {
+        alert("On a free hit, this dismissal is not allowed. Use Run Out, Retired Hurt, or Retired Out if applicable.");
+        return;
+      }
+      if (deliveryType === "noBall" && !validNoBallDismissals.includes(method)) {
+        alert("On a no-ball wicket, use Run Out, Retired Hurt, or Retired Out.");
+        return;
+      }
+      if (deliveryType === "wide" && !validWideDismissals.includes(method)) {
+        alert("On a wide wicket, use Stumped, Run Out, Retired Hurt, or Retired Out.");
+        return;
+      }
+
+      saveHistory();
+
       const batter = getBattingStat(state.selectedStriker, inning);
       const bowler = getBowlingStat(state.selectedBowler, inning);
       const outPlayer = state.selectedStriker;
@@ -1653,8 +2024,52 @@
         return;
       }
 
-      batter.balls += 1;
+      if (method === "retiredOut") {
+        batter.out = true;
+        batter.retired = false;
+        batter.retiredOut = true;
+        batter.dismissal = method;
+        inning.wickets += 1;
+        inning.fallOfWickets.push({
+          wicketNumber: inning.wickets,
+          score: inning.runs,
+          batterId: outPlayer,
+          over: oversText(inning.legalBalls),
+          method,
+          fielderId: "",
+          bowlerId: ""
+        });
+        addTimeline("wicket", `Retired out: ${playerName(outPlayer)} is out`, oversText(inning.legalBalls));
+        selectNextBatter();
+        checkInningsProgress();
+        render();
+        return;
+      }
+
+      if (deliveryType === "wide") {
+        inning.runs += 1;
+        inning.extras.wides += 1;
+        bowler.wides += 1;
+        bowler.runs += 1;
+        bowler.currentOverRuns += 1;
+      }
+
+      if (deliveryType === "noBall") {
+        inning.runs += 1;
+        inning.extras.noBalls += 1;
+        inning.freeHit = true;
+        bowler.noBalls += 1;
+        bowler.runs += 1;
+        bowler.currentOverRuns += 1;
+        batter.balls += 1;
+      }
+
+      if (legalDelivery) {
+        batter.balls += 1;
+      }
+
       batter.out = true;
+      batter.retired = false;
       batter.dismissal = method;
       batter.fielderId = fielderId || "";
       batter.bowlerId = bowlerGetsWicketCredit(method) ? state.selectedBowler : "";
@@ -1668,15 +2083,22 @@
         wicketNumber: inning.wickets,
         score: inning.runs,
         batterId: outPlayer,
-        over: label,
+        over: legalDelivery ? label : oversText(inning.legalBalls),
         method,
         fielderId: fielderId || "",
         bowlerId: batter.bowlerId
       });
 
-      addTimeline("wicket", `Wicket: ${playerName(outPlayer)} ${dismissalText(batter)}`, label);
+      const prefix = deliveryType === "wide" ? "Wide + " : deliveryType === "noBall" ? "No Ball + " : "";
+      addTimeline("wicket", `${prefix}Wicket: ${playerName(outPlayer)} ${dismissalText(batter)}`, legalDelivery ? label : oversText(inning.legalBalls));
       selectNextBatter();
-      completeLegalBall(0);
+
+      if (legalDelivery) {
+        completeLegalBall(0);
+      } else {
+        checkInningsProgress();
+      }
+
       render();
     }
 
@@ -1843,8 +2265,17 @@
         const isOut = role === "batter" && batterStat.out;
         const isRetired = role === "batter" && batterStat.retired;
         const bowledPreviousOver = role === "bowler" && !selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler");
+        const quota = role === "bowler" ? bowlerQuotaStatus(player.id, inning) : { reached: false };
         const disabled = isOut || bowledPreviousOver ? "disabled" : "";
-        const status = isOut ? " (Out)" : isRetired ? " (Retired - can return)" : bowledPreviousOver ? " (Previous over)" : "";
+        const status = isOut
+          ? " (Out)"
+          : isRetired
+            ? " (Retired - can return)"
+            : bowledPreviousOver
+              ? " (Previous over)"
+              : quota.reached
+                ? " (Quota reached)"
+                : "";
         options.push(`<option value="${player.id}" ${selected} ${disabled}>${escapeHtml(player.name)}${status}</option>`);
       });
       return options.join("");
@@ -1888,11 +2319,13 @@
       targetValue.textContent = state.target || "--";
       requiredRateValue.textContent = requiredRate();
       battingLabel.textContent = isReady ? `${teamName(inning.battingTeam)} batting` : "Current Score";
+      if ($("freeHitBadge")) $("freeHitBadge").hidden = !(isReady && inning.freeHit && !state.matchComplete);
 
       if (!isReady) {
         scoreContext.textContent = "Set up a match to begin scoring.";
       } else {
-        scoreContext.textContent = `${teamName(inning.bowlingTeam)} bowling | Balls ${inning.legalBalls} | Extras ${extrasTotal(inning)} | ${state.totalOvers} overs match`;
+        const freeHitText = inning.freeHit ? " | FREE HIT next legal ball" : "";
+        scoreContext.textContent = `${teamName(inning.bowlingTeam)} bowling | Balls ${inning.legalBalls} | Extras ${extrasTotal(inning)} | ${state.totalOvers} overs match${freeHitText}`;
       }
     }
 
@@ -1901,6 +2334,12 @@
       $("summaryTeam1Name").textContent = teamName(1);
       $("summaryTeam0Score").textContent = scoreLineForTeam(0);
       $("summaryTeam1Score").textContent = scoreLineForTeam(1);
+      if ($("summaryTeam0BoundaryName")) $("summaryTeam0BoundaryName").textContent = `${teamName(0)} Boundaries`;
+      if ($("summaryTeam1BoundaryName")) $("summaryTeam1BoundaryName").textContent = `${teamName(1)} Boundaries`;
+      const team0Boundaries = teamBoundaryStats(0);
+      const team1Boundaries = teamBoundaryStats(1);
+      if ($("summaryTeam0Boundaries")) $("summaryTeam0Boundaries").textContent = `4s: ${team0Boundaries.fours} | 6s: ${team0Boundaries.sixes}`;
+      if ($("summaryTeam1Boundaries")) $("summaryTeam1Boundaries").textContent = `4s: ${team1Boundaries.fours} | 6s: ${team1Boundaries.sixes}`;
 
       const inning = displayedInnings();
       $("inningsLabel").textContent = state.matchStarted ? `Innings ${state.currentInningsIndex + 1}` : "Innings --";
@@ -2022,10 +2461,12 @@
       tbody.innerHTML = players.length ? players.map((player) => {
         const stat = readBowlingStat(player.id, inning);
         const economy = stat.balls > 0 ? (stat.runs / (stat.balls / 6)).toFixed(2) : "0.00";
+        const quota = bowlerQuotaStatus(player.id, inning);
+        const quotaNote = quota.quota > 0 ? ` <span class="hint">/${oversText(quota.quota)}</span>` : "";
         return `
-          <tr>
-            <td>${escapeHtml(player.name)}</td>
-            <td>${oversText(stat.balls)}</td>
+          <tr class="${quota.reached ? "quota-warning" : ""}">
+            <td>${escapeHtml(player.name)}${quota.reached ? ' <span class="hint">quota</span>' : ""}</td>
+            <td>${oversText(stat.balls)}${quotaNote}</td>
             <td>${stat.maidens}</td>
             <td>${stat.runs}</td>
             <td>${stat.wickets}</td>
@@ -2046,7 +2487,7 @@
       $("undoBtn").disabled = !state.history.length;
       $("swapStrikeBtn").disabled = !state.matchStarted || state.matchComplete || !state.selectedStriker || !state.selectedNonStriker;
       if (scoringReady) {
-        scoreHint.textContent = `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling`;
+        scoreHint.textContent = `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling${currentInnings()?.freeHit ? " | FREE HIT" : ""}`;
       } else {
         scoreHint.textContent = scoreReadinessMessage();
       }
@@ -2101,6 +2542,7 @@
       renderBattingTable();
       renderBowlingTable();
       renderControls();
+      renderCloudControls();
 
       if (skipNextSave) {
         skipNextSave = false;
@@ -2206,8 +2648,9 @@
     $("confirmWicketBtn").addEventListener("click", () => {
       const method = $("dismissalTypeSelect").value;
       const fielderId = $("fielderSelect").value;
+      const deliveryType = $("wicketDeliveryTypeSelect")?.value || "legal";
       closeWicketPopup();
-      scoreWicket(method, fielderId);
+      scoreWicket(method, fielderId, deliveryType);
     });
     $("closeWicketPopupBtn").addEventListener("click", closeWicketPopup);
     $("wicketPopup").addEventListener("click", (event) => {
@@ -2270,7 +2713,26 @@
       render();
     });
 
+    $("joinPinInput").addEventListener("input", (event) => {
+      event.target.value = event.target.value.replace(/\D/g, "").slice(0, 4);
+    });
+
+    $("createOnlineMatchBtn").addEventListener("click", createOnlineMatch);
+    $("joinOnlineMatchBtn").addEventListener("click", () => loadMatchFromCloud($("joinPinInput").value));
+    $("leaveOnlineMatchBtn").addEventListener("click", leaveOnlineMatch);
+    $("copyPinBtn").addEventListener("click", async () => {
+      if (!cloudPin) return;
+      try {
+        await navigator.clipboard.writeText(cloudPin);
+        updateSyncStatus(`Copied PIN ${cloudPin}.`);
+      } catch (error) {
+        updateSyncStatus(`PIN: ${cloudPin}`);
+      }
+    });
+
     loadSavedMatch();
+    renderCloudControls();
+    startCloudPolling();
     render();
   </script>
 </body>
