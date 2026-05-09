@@ -310,6 +310,30 @@
       font-size: 0.9rem;
     }
 
+
+
+    .overthrow-inline {
+      display: grid;
+      grid-template-columns: minmax(180px, 260px) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #fbfdfc;
+      border: 1px dashed #cfdad4;
+      border-radius: 8px;
+    }
+
+    .overthrow-inline .small-note {
+      margin: 0;
+    }
+
+    @media (max-width: 700px) {
+      .overthrow-inline {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .score-buttons {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -696,6 +720,13 @@
           <div class="card-header">
             <h2>4. Live Scoring</h2>
             <span class="hint" id="scoreHint">Select players to score</span>
+          </div>
+          <div class="overthrow-inline">
+            <div class="field">
+              <label for="optionalOverthrowRunsInput">Overthrow runs, optional</label>
+              <input id="optionalOverthrowRunsInput" type="number" min="0" max="6" value="0" />
+            </div>
+            <p class="small-note">Leave this as 0 for normal deliveries. If an overthrow happens, enter those runs first, then click the actual delivery button.</p>
           </div>
           <div class="score-buttons">
             <button class="score-btn" data-run="0">0</button>
@@ -1200,27 +1231,6 @@
       }
     }
 
-    function openRunPopup(runs) {
-      if (!canScore()) return;
-      pendingRunValue = Number(runs) || 0;
-      pendingExtraType = "";
-
-      $("extraPopupTitle").textContent = `Runs + Overthrow`;
-      $("extraPopupHelp").textContent = "Use this when the batter scores runs and any overthrow happens on the same legal delivery.";
-      $("extraRunButtons").innerHTML = `
-        <div class="field">
-          <label>Runs off bat</label>
-          <input id="completedRunsInput" type="number" min="0" max="6" value="${pendingRunValue}" />
-        </div>
-        <div class="field">
-          <label>Overthrow runs</label>
-          <input id="overthrowRunsInput" type="number" min="0" max="6" value="0" />
-        </div>
-        <button class="primary-btn" id="confirmDeliveryRunsBtn">Add Runs</button>
-      `;
-      $("extraPopup").classList.add("show");
-    }
-
     function scoreRun(runs, overthrowRuns = 0) {
       if (!canScore()) return;
       saveHistory();
@@ -1259,18 +1269,14 @@
       const defaultCompletedRuns = isPenaltyExtra ? 0 : 1;
       const completedLabel = type === "noBall" ? "Runs off bat" : "Runs completed";
 
-      $("extraPopupTitle").textContent = `${extraLabels[type]} + Overthrow`;
+      $("extraPopupTitle").textContent = `${extraLabels[type]} Runs`;
       $("extraPopupHelp").textContent = isPenaltyExtra
-        ? "The penalty run is added automatically. Add runs completed and overthrow runs from the same illegal delivery."
-        : "Add runs completed and overthrow runs from the same legal delivery.";
+        ? "The penalty run is added automatically. Enter only the runs completed on this delivery. Use the optional overthrow field outside this popup when needed."
+        : "Enter the runs completed on this legal delivery. Use the optional overthrow field outside this popup when needed.";
       $("extraRunButtons").innerHTML = `
         <div class="field">
           <label>${completedLabel}</label>
           <input id="completedRunsInput" type="number" min="0" max="6" value="${defaultCompletedRuns}" />
-        </div>
-        <div class="field">
-          <label>Overthrow runs</label>
-          <input id="overthrowRunsInput" type="number" min="0" max="6" value="0" />
         </div>
         <button class="primary-btn" id="confirmDeliveryRunsBtn">Add Runs</button>
       `;
@@ -1721,6 +1727,18 @@
       }
     }
 
+
+
+    function getOptionalOverthrowRuns() {
+      const input = $("optionalOverthrowRunsInput");
+      return Math.max(0, Math.min(6, Number(input?.value) || 0));
+    }
+
+    function resetOptionalOverthrowRuns() {
+      const input = $("optionalOverthrowRunsInput");
+      if (input) input.value = 0;
+    }
+
     function escapeHtml(value) {
       return String(value)
         .replaceAll("&", "&amp;")
@@ -1773,7 +1791,11 @@
     });
 
     document.querySelectorAll("[data-run]").forEach((button) => {
-      button.addEventListener("click", () => openRunPopup(Number(button.dataset.run)));
+      button.addEventListener("click", () => {
+        const overthrowRuns = getOptionalOverthrowRuns();
+        scoreRun(Number(button.dataset.run), overthrowRuns);
+        resetOptionalOverthrowRuns();
+      });
     });
 
     document.querySelectorAll("[data-extra]").forEach((button) => {
@@ -1784,18 +1806,13 @@
       if (event.target.id !== "confirmDeliveryRunsBtn") return;
 
       const completedRuns = Number($("completedRunsInput").value) || 0;
-      const overthrowRuns = Number($("overthrowRunsInput").value) || 0;
+      const overthrowRuns = getOptionalOverthrowRuns();
 
       if (pendingExtraType) {
         const type = pendingExtraType;
         closeExtraPopup();
         scoreExtra(type, completedRuns, overthrowRuns);
-        return;
-      }
-
-      if (pendingRunValue !== null) {
-        closeExtraPopup();
-        scoreRun(completedRuns, overthrowRuns);
+        resetOptionalOverthrowRuns();
       }
     });
 
