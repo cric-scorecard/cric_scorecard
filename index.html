@@ -833,6 +833,16 @@
 
         <section class="card">
           <div class="card-header">
+            <h2>Fall of Wickets</h2>
+            <span class="hint" id="fowCount">0 wickets</span>
+          </div>
+          <div class="fow-list" id="fallOfWicketsList">
+            <div class="empty-state">No wickets yet.</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
             <h2>Ball-by-Ball Timeline</h2>
             <span class="hint" id="timelineCount">0 balls</span>
           </div>
@@ -878,6 +888,8 @@
               <th>Maidens</th>
               <th>Runs</th>
               <th>Wickets</th>
+              <th>Wd</th>
+              <th>Nb</th>
               <th>Economy</th>
             </tr>
           </thead>
@@ -894,6 +906,33 @@
       <div class="extra-run-buttons" id="extraRunButtons"></div>
       <div class="button-row">
         <button class="ghost-btn" id="closeExtraPopupBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="popup-backdrop" id="wicketPopup" role="dialog" aria-modal="true" aria-labelledby="wicketPopupTitle">
+    <div class="extra-popup">
+      <h3 id="wicketPopupTitle">Wicket Details</h3>
+      <p class="small-note">Choose how the batter got out. Bowler credit is applied only for dismissals that count for the bowler.</p>
+      <div class="field">
+        <label for="dismissalTypeSelect">Dismissal Type</label>
+        <select id="dismissalTypeSelect">
+          <option value="bowled">Bowled</option>
+          <option value="caught">Caught</option>
+          <option value="lbw">LBW</option>
+          <option value="stumped">Stumped</option>
+          <option value="hitWicket">Hit Wicket</option>
+          <option value="runOut">Run Out</option>
+          <option value="retiredHurt">Retired Hurt</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top: 12px;">
+        <label for="fielderSelect">Fielder / Keeper Involved</label>
+        <select id="fielderSelect"></select>
+      </div>
+      <div class="button-row">
+        <button class="primary-btn" id="confirmWicketBtn">Add Wicket</button>
+        <button class="ghost-btn" id="closeWicketPopupBtn">Cancel</button>
       </div>
     </div>
   </div>
@@ -1004,6 +1043,7 @@
         previousBowler: typeof inning.previousBowler === "string" ? inning.previousBowler : "",
         batting: inning.batting && typeof inning.batting === "object" ? inning.batting : {},
         bowling: inning.bowling && typeof inning.bowling === "object" ? inning.bowling : {},
+        fallOfWickets: Array.isArray(inning.fallOfWickets) ? inning.fallOfWickets : [],
         timeline: Array.isArray(inning.timeline) ? inning.timeline : []
       })) : [];
 
@@ -1065,6 +1105,7 @@
         previousBowler: "",
         batting: {},
         bowling: {},
+        fallOfWickets: [],
         timeline: []
       };
     }
@@ -1085,9 +1126,17 @@
           balls: 0,
           fours: 0,
           sixes: 0,
-          out: false
+          out: false,
+          retired: false,
+          dismissal: "",
+          fielderId: "",
+          bowlerId: ""
         };
       }
+      inning.batting[playerId].retired = Boolean(inning.batting[playerId].retired);
+      inning.batting[playerId].dismissal = inning.batting[playerId].dismissal || "";
+      inning.batting[playerId].fielderId = inning.batting[playerId].fielderId || "";
+      inning.batting[playerId].bowlerId = inning.batting[playerId].bowlerId || "";
       return inning.batting[playerId];
     }
 
@@ -1098,9 +1147,13 @@
           maidens: 0,
           runs: 0,
           wickets: 0,
+          wides: 0,
+          noBalls: 0,
           currentOverRuns: 0
         };
       }
+      inning.bowling[playerId].wides = Math.max(0, Number(inning.bowling[playerId].wides) || 0);
+      inning.bowling[playerId].noBalls = Math.max(0, Number(inning.bowling[playerId].noBalls) || 0);
       return inning.bowling[playerId];
     }
 
@@ -1110,7 +1163,11 @@
         balls: 0,
         fours: 0,
         sixes: 0,
-        out: false
+        out: false,
+        retired: false,
+        dismissal: "",
+        fielderId: "",
+        bowlerId: ""
       };
     }
 
@@ -1120,6 +1177,8 @@
         maidens: 0,
         runs: 0,
         wickets: 0,
+        wides: 0,
+        noBalls: 0,
         currentOverRuns: 0
       };
     }
@@ -1164,7 +1223,8 @@
         return !hasBowlingAlternative || playerId !== inning.previousBowler;
       }
       if (role !== "batter") return true;
-      return !readBattingStat(playerId, inning).out;
+      const stat = readBattingStat(playerId, inning);
+      return !stat.out && !stat.retired;
     }
 
     function validateCurrentSelections() {
@@ -1197,7 +1257,7 @@
       if (state.matchComplete) return "Match finished";
       if (!inning) return "Create a match to begin scoring";
 
-      const availableBatters = state.teams[inning.battingTeam].players.filter((player) => !readBattingStat(player.id, inning).out);
+      const availableBatters = state.teams[inning.battingTeam].players.filter((player) => { const stat = readBattingStat(player.id, inning); return !stat.out && !stat.retired; });
       const bowlers = state.teams[inning.bowlingTeam].players;
 
       if (inning.legalBalls >= state.totalOvers * 6) return "Overs complete. End the innings to continue.";
@@ -1252,7 +1312,7 @@
       const battingTeam = state.teams[inning.battingTeam];
       const next = battingTeam.players.find((player) => {
         const stat = readBattingStat(player.id, inning);
-        return !stat.out && player.id !== state.selectedNonStriker;
+        return !stat.out && !stat.retired && player.id !== state.selectedNonStriker;
       });
       state.selectedStriker = next ? next.id : "";
     }
@@ -1362,6 +1422,7 @@
         const totalRuns = 1 + completed + overthrow;
         inning.runs += totalRuns;
         inning.extras.wides += totalRuns;
+        bowler.wides += totalRuns;
         bowler.runs += totalRuns;
         bowler.currentOverRuns += totalRuns;
 
@@ -1383,6 +1444,7 @@
 
         inning.runs += totalRuns;
         inning.extras.noBalls += 1;
+        bowler.noBalls += 1;
         batter.runs += batterRuns;
         batter.balls += 1;
         if (batterRuns === 4) batter.fours += 1;
@@ -1421,7 +1483,56 @@
       render();
     }
 
-    function scoreWicket() {
+    function dismissalLabel(type) {
+      const labels = {
+        bowled: "b",
+        caught: "c",
+        lbw: "lbw",
+        stumped: "st",
+        hitWicket: "hit wicket",
+        runOut: "run out",
+        retiredHurt: "retired hurt"
+      };
+      return labels[type] || "out";
+    }
+
+    function bowlerGetsWicketCredit(type) {
+      return ["bowled", "caught", "lbw", "stumped", "hitWicket"].includes(type);
+    }
+
+    function dismissalText(stat) {
+      if (stat.retired) return "Retired hurt";
+      if (!stat.out) return "Not Out";
+
+      const type = stat.dismissal || "out";
+      const bowler = stat.bowlerId ? playerName(stat.bowlerId) : "";
+      const fielder = stat.fielderId ? playerName(stat.fielderId) : "";
+
+      if (type === "bowled") return `b ${bowler}`;
+      if (type === "lbw") return `lbw b ${bowler}`;
+      if (type === "caught") return `c ${fielder || "fielder"} b ${bowler}`;
+      if (type === "stumped") return `st ${fielder || "keeper"} b ${bowler}`;
+      if (type === "hitWicket") return `hit wicket b ${bowler}`;
+      if (type === "runOut") return `run out${fielder ? ` (${fielder})` : ""}`;
+      return "Out";
+    }
+
+    function openWicketPopup() {
+      if (!canScore()) return;
+      const inning = currentInnings();
+      const fielders = state.teams[inning.bowlingTeam].players;
+      $("fielderSelect").innerHTML = '<option value="">No fielder / not applicable</option>' + fielders.map((player) => (
+        `<option value="${player.id}">${escapeHtml(player.name)}</option>`
+      )).join("");
+      $("dismissalTypeSelect").value = "bowled";
+      $("wicketPopup").classList.add("show");
+    }
+
+    function closeWicketPopup() {
+      $("wicketPopup").classList.remove("show");
+    }
+
+    function scoreWicket(method = "bowled", fielderId = "") {
       if (!canScore()) return;
       saveHistory();
 
@@ -1431,12 +1542,37 @@
       const outPlayer = state.selectedStriker;
       const label = nextBallLabel(inning);
 
+      if (method === "retiredHurt") {
+        batter.retired = true;
+        batter.dismissal = method;
+        addTimeline("wicket", `Retired hurt: ${playerName(outPlayer)} leaves the field`, oversText(inning.legalBalls));
+        selectNextBatter();
+        render();
+        return;
+      }
+
       batter.balls += 1;
       batter.out = true;
+      batter.dismissal = method;
+      batter.fielderId = fielderId || "";
+      batter.bowlerId = bowlerGetsWicketCredit(method) ? state.selectedBowler : "";
       inning.wickets += 1;
-      bowler.wickets += 1;
 
-      addTimeline("wicket", `Wicket: ${playerName(outPlayer)} is out`, label);
+      if (bowlerGetsWicketCredit(method)) {
+        bowler.wickets += 1;
+      }
+
+      inning.fallOfWickets.push({
+        wicketNumber: inning.wickets,
+        score: inning.runs,
+        batterId: outPlayer,
+        over: label,
+        method,
+        fielderId: fielderId || "",
+        bowlerId: batter.bowlerId
+      });
+
+      addTimeline("wicket", `Wicket: ${playerName(outPlayer)} ${dismissalText(batter)}`, label);
       selectNextBatter();
       completeLegalBall(0);
       render();
@@ -1525,7 +1661,7 @@
       if (!inning) return;
       const batters = state.teams[inning.battingTeam].players;
       const bowlers = state.teams[inning.bowlingTeam].players;
-      const availableBatters = batters.filter((player) => !readBattingStat(player.id, inning).out);
+      const availableBatters = batters.filter((player) => { const stat = readBattingStat(player.id, inning); return !stat.out && !stat.retired; });
       const availableBowlers = bowlers.filter((player) => selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler"));
 
       if (!state.selectedStriker && availableBatters[0]) state.selectedStriker = availableBatters[0].id;
@@ -1599,10 +1735,12 @@
       const options = ['<option value="">Select player</option>'];
       players.forEach((player) => {
         const selected = player.id === selectedValue ? "selected" : "";
-        const isOut = role === "batter" && readBattingStat(player.id, inning).out;
+        const batterStat = readBattingStat(player.id, inning);
+        const isOut = role === "batter" && batterStat.out;
+        const isRetired = role === "batter" && batterStat.retired;
         const bowledPreviousOver = role === "bowler" && !selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler");
-        const disabled = isOut || bowledPreviousOver ? "disabled" : "";
-        const status = isOut ? " (Out)" : bowledPreviousOver ? " (Previous over)" : "";
+        const disabled = isOut || isRetired || bowledPreviousOver ? "disabled" : "";
+        const status = isOut ? " (Out)" : isRetired ? " (Retired)" : bowledPreviousOver ? " (Previous over)" : "";
         options.push(`<option value="${player.id}" ${selected} ${disabled}>${escapeHtml(player.name)}${status}</option>`);
       });
       return options.join("");
@@ -1692,6 +1830,28 @@
       $("totalExtrasValue").textContent = total;
     }
 
+    function renderFallOfWickets() {
+      const inning = currentInnings();
+      const list = $("fallOfWicketsList");
+      if (!list) return;
+
+      if (!inning || !inning.fallOfWickets || !inning.fallOfWickets.length) {
+        list.innerHTML = '<div class="empty-state">No wickets yet.</div>';
+        $("fowCount").textContent = "0 wickets";
+        return;
+      }
+
+      $("fowCount").textContent = `${inning.fallOfWickets.length} wicket${inning.fallOfWickets.length === 1 ? "" : "s"}`;
+      list.innerHTML = inning.fallOfWickets.map((wicket) => `
+        <div class="fow-item">
+          <strong>${wicket.wicketNumber}-${wicket.score}</strong>
+          (${escapeHtml(playerName(wicket.batterId))}, ${escapeHtml(wicket.over)} ov)
+          <br />
+          <span class="hint">${escapeHtml(dismissalLabel(wicket.method))}${wicket.fielderId ? ` - ${escapeHtml(playerName(wicket.fielderId))}` : ""}</span>
+        </div>
+      `).join("");
+    }
+
     function renderTimeline() {
       const inning = currentInnings();
       const timeline = $("timeline");
@@ -1724,7 +1884,7 @@
       tbody.innerHTML = players.length ? players.map((player) => {
         const stat = readBattingStat(player.id, inning);
         const strikeRate = stat.balls ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
-        const status = stat.out ? "Out" : "Not Out";
+        const status = dismissalText(stat);
         return `
           <tr>
             <td>${escapeHtml(player.name)}</td>
@@ -1743,7 +1903,7 @@
       const inning = currentInnings();
       const tbody = $("bowlingTable");
       if (!inning) {
-        tbody.innerHTML = '<tr><td colspan="6">Create a match to view the bowling scorecard.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8">Create a match to view the bowling scorecard.</td></tr>';
         $("bowlingCardTeam").textContent = "--";
         return;
       }
@@ -1760,10 +1920,12 @@
             <td>${stat.maidens}</td>
             <td>${stat.runs}</td>
             <td>${stat.wickets}</td>
+            <td>${stat.wides || 0}</td>
+            <td>${stat.noBalls || 0}</td>
             <td>${economy}</td>
           </tr>
         `;
-      }).join("") : '<tr><td colspan="6">Add players to the bowling team.</td></tr>';
+      }).join("") : '<tr><td colspan="8">Add players to the bowling team.</td></tr>';
     }
 
     function renderControls() {
@@ -1799,6 +1961,7 @@
       renderScoreHero();
       renderSummary();
       renderExtras();
+      renderFallOfWickets();
       renderTimeline();
       renderBattingTable();
       renderBowlingTable();
@@ -1905,7 +2068,17 @@
       if (event.target.id === "extraPopup") closeExtraPopup();
     });
 
-    $("wicketBtn").addEventListener("click", scoreWicket);
+    $("wicketBtn").addEventListener("click", openWicketPopup);
+    $("confirmWicketBtn").addEventListener("click", () => {
+      const method = $("dismissalTypeSelect").value;
+      const fielderId = $("fielderSelect").value;
+      closeWicketPopup();
+      scoreWicket(method, fielderId);
+    });
+    $("closeWicketPopupBtn").addEventListener("click", closeWicketPopup);
+    $("wicketPopup").addEventListener("click", (event) => {
+      if (event.target.id === "wicketPopup") closeWicketPopup();
+    });
     $("undoBtn").addEventListener("click", undoLastBall);
     $("endInningsBtn").addEventListener("click", () => {
       if (!state.matchStarted || state.matchComplete) return;
