@@ -686,6 +686,57 @@ tr.active-batter {
   border-left: 4px solid var(--amber);
 }
 
+.players-connected {
+  margin-top: 14px;
+  padding: 14px;
+  background: #f0f5f3;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.players-connected h4 {
+  margin: 0 0 10px;
+  color: var(--navy);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.player-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.player-badge.owner {
+  background: var(--mint);
+  border-color: var(--green);
+  font-weight: 600;
+}
+
+.player-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.player-indicator.owner {
+  background: var(--green-dark);
+}
+
 @media (max-width: 980px) {
   .topbar,
   .grid {

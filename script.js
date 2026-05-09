@@ -46,6 +46,8 @@ let applyingRemoteState = false;
 let lastRemoteUpdatedAt = 0;
 let currentUserUid = "";
 let cloudOwnerUid = "";
+let cloudPlayers = {}; // Track active players { uid: { displayName, joinedAt, isEditor } }
+let editorsLocked = false; // If true, only owner can edit
 
 onAuthStateChanged(auth, (user) => {
   currentUserUid = user?.uid || "";
@@ -120,7 +122,10 @@ async function ensureSignedIn() {
 }
 
 function canEditOnlineMatch() {
-  return Boolean(!cloudPin || (cloudOwnerUid && currentUserUid === cloudOwnerUid));
+  if (!cloudPin) return true; // Local mode
+  if (cloudOwnerUid === currentUserUid) return true; // Owner can always edit
+  if (editorsLocked) return false; // Editors locked, only owner can edit
+  return Object.keys(cloudPlayers).includes(currentUserUid); // Player joined the match
 }
 
 function updateSyncStatus(message) {
@@ -135,8 +140,14 @@ function updateSyncStatus(message) {
 function cloudReadyMessage() {
   if (!isCloudConfigured()) return "Local only. Firebase is not configured.";
   if (!cloudPin) return "Create or join a PIN to share and edit this scorecard live.";
-  if (canEditOnlineMatch()) return `Live editing is active for PIN ${cloudPin}. Other devices can view with this PIN.`;
-  return `Viewing PIN ${cloudPin}. Only the creator device can edit the shared scorecard.`;
+  const playerCount = Object.keys(cloudPlayers).length;
+  if (cloudOwnerUid === currentUserUid) {
+    return `Live editing active for PIN ${cloudPin} (${playerCount} player${playerCount !== 1 ? 's' : ''} connected). Others can join and edit together.`;
+  }
+  if (editorsLocked) {
+    return `View-only mode for PIN ${cloudPin} (${playerCount} player${playerCount !== 1 ? 's' : ''} connected).`;
+  }
+  return `Joined PIN ${cloudPin} (${playerCount} player${playerCount !== 1 ? 's' : ''} connected). All players can edit.`;
 }
 
 function exportCloudState() {
@@ -144,6 +155,17 @@ function exportCloudState() {
   cloned.history = [];
   cloned.viewingInningsIndex = null;
   return cloned;
+}
+
+function buildCloudPayload(pin, ownerUid, currentPlayers = {}) {
+  return {
+    pin,
+    ownerUid,
+    updatedAt: Date.now(),
+    state: exportCloudState(),
+    players: currentPlayers,
+    editorsLocked: editorsLocked
+  };
 }
 
 function scheduleCloudSave() {
@@ -160,23 +182,25 @@ async function saveMatchToCloud() {
 
   try {
     const uid = await ensureSignedIn();
-    if (cloudOwnerUid && uid !== cloudOwnerUid) {
-      updateSyncStatus(`Viewing PIN ${cloudPin}. Shared edits are locked to the creator device.`);
+    const isOwner = cloudOwnerUid && uid === cloudOwnerUid;
+    const canEdit = isOwner || (!editorsLocked && Object.keys(cloudPlayers).includes(uid));
+
+    if (!canEdit) {
+      updateSyncStatus(`View-only mode for PIN ${cloudPin}.`);
       return;
     }
 
-    const updatedAt = Date.now();
-    const payload = {
-      pin: cloudPin,
-      ownerUid: cloudOwnerUid || uid,
-      updatedAt,
-      state: exportCloudState()
+    // Update current player's entry
+    cloudPlayers[uid] = {
+      displayName: `Player ${uid.slice(0, 8)}`,
+      joinedAt: Date.now(),
+      isEditor: isOwner
     };
 
+    const payload = buildCloudPayload(cloudPin, cloudOwnerUid, cloudPlayers);
     await setDoc(matchCloudRef(), payload);
-    cloudOwnerUid = payload.ownerUid;
-    lastRemoteUpdatedAt = updatedAt;
-    updateSyncStatus(`Saved online under PIN ${cloudPin}.`);
+    lastRemoteUpdatedAt = payload.updatedAt;
+    updateSyncStatus(`Saved online under PIN ${cloudPin}. ${Object.keys(cloudPlayers).length} player(s) connected.`);
   } catch (error) {
     console.error(error);
     updateSyncStatus("Online save failed. Check Firestore rules, then try again.");
@@ -188,7 +212,7 @@ async function fetchCloudMatch(pin) {
   return snapshot.exists() ? snapshot.data() : null;
 }
 
-function applyRemoteState(remoteState, updatedAt = Date.now()) {
+function applyRemoteState(remoteState, updatedAt = Date.now(), remotePlayers = {}, remoteLocked = false) {
   applyingRemoteState = true;
   try {
     Object.keys(state).forEach((key) => delete state[key]);
@@ -196,6 +220,8 @@ function applyRemoteState(remoteState, updatedAt = Date.now()) {
     state.viewingInningsIndex = null;
     normalizeLoadedState();
     lastRemoteUpdatedAt = Math.max(lastRemoteUpdatedAt, Number(updatedAt) || Date.now());
+    cloudPlayers = { ...remotePlayers };
+    editorsLocked = Boolean(remoteLocked);
     render();
   } finally {
     applyingRemoteState = false;
@@ -227,10 +253,20 @@ async function loadMatchFromCloud(pin) {
     await ensureSignedIn();
     cloudPin = normalizedPin;
     rememberCloudOwner(remote.ownerUid);
+    editorsLocked = Boolean(remote.editorsLocked);
+    
+    // Add current user to players list
+    cloudPlayers = { ...remote.players };
+    cloudPlayers[currentUserUid] = {
+      displayName: `Player ${currentUserUid.slice(0, 8)}`,
+      joinedAt: Date.now(),
+      isEditor: false
+    };
+    
     localStorage.setItem(CLOUD_PIN_STORAGE_KEY, cloudPin);
-    applyRemoteState(remote.state, remote.updatedAt);
+    applyRemoteState(remote.state, remote.updatedAt, cloudPlayers, editorsLocked);
     startCloudPolling();
-    updateSyncStatus(cloudReadyMessage());
+    updateSyncStatus(`Joined PIN ${cloudPin}. ${Object.keys(cloudPlayers).length} player(s) connected.`);
   } catch (error) {
     console.error(error);
     updateSyncStatus("Unable to join PIN. Check internet and Firestore rules.");
@@ -252,10 +288,19 @@ async function createOnlineMatch() {
 
       cloudPin = candidatePin;
       cloudOwnerUid = uid;
+      editorsLocked = false;
+      cloudPlayers = {
+        [uid]: {
+          displayName: `Player ${uid.slice(0, 8)}`,
+          joinedAt: Date.now(),
+          isEditor: true
+        }
+      };
+      
       localStorage.setItem(CLOUD_PIN_STORAGE_KEY, cloudPin);
       await saveMatchToCloud();
       startCloudPolling();
-      updateSyncStatus(`Created online match. Share PIN ${cloudPin}.`);
+      updateSyncStatus(`Created online match. Share PIN ${cloudPin}. ${Object.keys(cloudPlayers).length} player(s) connected.`);
       renderCloudControls();
       return;
         } catch (error) {
@@ -276,9 +321,12 @@ async function pollCloudMatch() {
     if (!remote?.state) return;
     rememberCloudOwner(remote.ownerUid);
     const remoteUpdatedAt = Number(remote.updatedAt) || 0;
+    editorsLocked = Boolean(remote.editorsLocked);
+    cloudPlayers = { ...remote.players };
+    
     if (remoteUpdatedAt > lastRemoteUpdatedAt) {
-      applyRemoteState(remote.state, remoteUpdatedAt);
-      updateSyncStatus(`Loaded latest online update for PIN ${cloudPin}.`);
+      applyRemoteState(remote.state, remoteUpdatedAt, cloudPlayers, editorsLocked);
+      updateSyncStatus(`Loaded latest online update for PIN ${cloudPin}. ${Object.keys(cloudPlayers).length} player(s) connected.`);
     }
   } catch (error) {
     console.warn("Cloud polling failed.", error);
@@ -297,6 +345,8 @@ function leaveOnlineMatch() {
   cloudPin = "";
   cloudOwnerUid = "";
   lastRemoteUpdatedAt = 0;
+  cloudPlayers = {};
+  editorsLocked = false;
   clearInterval(syncTimer);
   clearTimeout(cloudSaveTimer);
   localStorage.removeItem(CLOUD_PIN_STORAGE_KEY);
@@ -306,6 +356,7 @@ function leaveOnlineMatch() {
 
 function renderCloudControls() {
   updateSyncStatus(cloudReadyMessage());
+  renderConnectedPlayers();
   const createBtn = $("createOnlineMatchBtn");
   const joinBtn = $("joinOnlineMatchBtn");
   const copyBtn = $("copyPinBtn");
@@ -315,6 +366,39 @@ function renderCloudControls() {
   });
   if (copyBtn) copyBtn.disabled = !cloudPin;
   if (leaveBtn) leaveBtn.disabled = !cloudPin;
+}
+
+function renderConnectedPlayers() {
+  const container = $("playersConnected");
+  const playersList = $("playersList");
+  
+  if (!container || !playersList) return;
+  
+  if (!cloudPin || Object.keys(cloudPlayers).length === 0) {
+    container.hidden = true;
+    return;
+  }
+  
+  container.hidden = false;
+  playersList.innerHTML = "";
+  
+  Object.entries(cloudPlayers).forEach(([uid, playerData]) => {
+    const isOwner = uid === cloudOwnerUid;
+    const isCurrent = uid === currentUserUid;
+    
+    const badge = document.createElement("div");
+    badge.className = `player-badge ${isOwner ? "owner" : ""}`;
+    
+    const indicator = document.createElement("span");
+    indicator.className = `player-indicator ${isOwner ? "owner" : ""}`;
+    badge.appendChild(indicator);
+    
+    const name = document.createElement("span");
+    name.textContent = `${playerData.displayName}${isOwner ? " (Owner)" : ""}${isCurrent ? " (You)" : ""}`;
+    badge.appendChild(name);
+    
+    playersList.appendChild(badge);
+  });
 }
 
 function loadSavedMatch() {

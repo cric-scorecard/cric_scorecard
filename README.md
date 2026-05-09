@@ -2,7 +2,7 @@
 
 A responsive cricket scorecard app for creating a match, adding players, scoring ball by ball, and viewing live scorecards.
 
-The app saves progress on the user device with `localStorage`. It also supports shared live scorecard editing with a 4-digit PIN using Firebase Firestore.
+The app saves progress on the user device with `localStorage`. It also supports **shared live scorecard editing with multiple players** using a 4-digit PIN and Firebase Firestore. All players can edit in real-time and see changes instantly.
 
 ## What It Does
 
@@ -17,7 +17,8 @@ The app saves progress on the user device with `localStorage`. It also supports 
 - Show batting and bowling scorecards
 - Show ball-by-ball timeline
 - Save locally and continue after refresh
-- Share and edit a live scorecard with a PIN
+- **Share and edit a live scorecard with a PIN (multi-player collaborative editing)**
+- See all connected players in real-time
 
 ## Project Files
 

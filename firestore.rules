@@ -11,30 +11,44 @@ service cloud.firestore {
         'pin',
         'ownerUid',
         'updatedAt',
-        'state'
+        'state',
+        'players',
+        'editorsLocked'
       ]) &&
       request.resource.data.pin is string &&
       request.resource.data.ownerUid is string &&
       request.resource.data.updatedAt is number &&
-      request.resource.data.state is map;
+      request.resource.data.state is map &&
+      request.resource.data.players is map &&
+      request.resource.data.editorsLocked is bool;
+    }
+
+    function isActiveEditor(pin) {
+      let players = resource.data.players[request.auth.uid];
+      return players != null && players.isEditor == true;
     }
 
     match /matches/{pin} {
       allow get: if isFourDigitPin(pin);
       allow list: if false;
 
+      // Create: owner creates match
       allow create: if request.auth != null &&
         isFourDigitPin(pin) &&
         hasValidMatchShape() &&
         request.resource.data.pin == pin &&
-        request.resource.data.ownerUid == request.auth.uid;
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.editorsLocked == false;
 
+      // Update: owner or active editors can edit
       allow update: if request.auth != null &&
         isFourDigitPin(pin) &&
         hasValidMatchShape() &&
-        resource.data.ownerUid == request.auth.uid &&
+        resource.data.pin == pin &&
+        request.resource.data.pin == resource.data.pin &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
-        request.resource.data.pin == resource.data.pin;
+        (resource.data.ownerUid == request.auth.uid || 
+         (resource.data.editorsLocked == false && request.auth.uid in resource.data.players));
 
       allow delete: if false;
     }
