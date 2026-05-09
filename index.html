@@ -803,9 +803,57 @@
 
         const restored = JSON.parse(savedMatch);
         Object.assign(state, createDefaultState(), restored);
+        normalizeLoadedState();
       } catch (error) {
         console.warn("Unable to restore saved match data.", error);
+        resetMatch();
       }
+    }
+
+    function normalizeLoadedState() {
+      const fallback = createDefaultState();
+      state.totalOvers = Math.max(1, Number(state.totalOvers) || fallback.totalOvers);
+      state.currentInningsIndex = Math.max(0, Number(state.currentInningsIndex) || 0);
+      state.target = state.target === null ? null : Math.max(0, Number(state.target) || 0);
+      state.result = typeof state.result === "string" ? state.result : fallback.result;
+      state.matchStarted = Boolean(state.matchStarted);
+      state.matchComplete = Boolean(state.matchComplete);
+      state.history = Array.isArray(state.history) ? state.history.filter((item) => typeof item === "string") : [];
+      state.teams = Array.isArray(state.teams) ? state.teams.slice(0, 2) : fallback.teams;
+
+      while (state.teams.length < 2) {
+        state.teams.push({ ...fallback.teams[state.teams.length], players: [] });
+      }
+
+      state.teams = state.teams.map((team, index) => ({
+        name: typeof team?.name === "string" ? team.name : `Team ${index + 1}`,
+        players: Array.isArray(team?.players) ? team.players.slice(0, 11).filter((player) => player?.id && player?.name) : []
+      }));
+
+      state.innings = Array.isArray(state.innings) ? state.innings.filter(Boolean).slice(0, 2).map((inning) => ({
+        battingTeam: Number(inning.battingTeam) === 1 ? 1 : 0,
+        bowlingTeam: Number(inning.bowlingTeam) === 0 ? 0 : 1,
+        runs: Math.max(0, Number(inning.runs) || 0),
+        wickets: Math.min(10, Math.max(0, Number(inning.wickets) || 0)),
+        legalBalls: Math.max(0, Number(inning.legalBalls) || 0),
+        extras: {
+          wides: Math.max(0, Number(inning.extras?.wides) || 0),
+          noBalls: Math.max(0, Number(inning.extras?.noBalls) || 0),
+          byes: Math.max(0, Number(inning.extras?.byes) || 0),
+          legByes: Math.max(0, Number(inning.extras?.legByes) || 0)
+        },
+        batting: inning.batting && typeof inning.batting === "object" ? inning.batting : {},
+        bowling: inning.bowling && typeof inning.bowling === "object" ? inning.bowling : {},
+        timeline: Array.isArray(inning.timeline) ? inning.timeline : []
+      })) : [];
+
+      state.innings.forEach((inning) => {
+        if (inning.battingTeam === inning.bowlingTeam) {
+          inning.bowlingTeam = inning.battingTeam === 0 ? 1 : 0;
+        }
+      });
+      state.currentInningsIndex = Math.min(state.currentInningsIndex, Math.max(0, state.innings.length - 1));
+      validateCurrentSelections();
     }
 
     function resetMatch() {
@@ -922,23 +970,55 @@
 
     // Store a full snapshot before scoring actions so undo is dependable.
     function saveHistory() {
-      const snapshot = JSON.stringify({
-        ...state,
-        history: state.history.slice()
-      });
+      const snapshot = JSON.stringify({ ...state, history: [] });
       state.history.push(snapshot);
+    }
+
+    function selectedPlayerIsAvailable(playerId, teamIndex, inning, role) {
+      const playerExists = state.teams[teamIndex]?.players.some((player) => player.id === playerId);
+      if (!playerExists) return false;
+      if (role !== "batter") return true;
+      return !readBattingStat(playerId, inning).out;
+    }
+
+    function validateCurrentSelections() {
+      const inning = currentInnings();
+      if (!inning) {
+        state.selectedStriker = "";
+        state.selectedNonStriker = "";
+        state.selectedBowler = "";
+        return;
+      }
+
+      if (!selectedPlayerIsAvailable(state.selectedStriker, inning.battingTeam, inning, "batter")) {
+        state.selectedStriker = "";
+      }
+      if (!selectedPlayerIsAvailable(state.selectedNonStriker, inning.battingTeam, inning, "batter")) {
+        state.selectedNonStriker = "";
+      }
+      if (!selectedPlayerIsAvailable(state.selectedBowler, inning.bowlingTeam, inning, "bowler")) {
+        state.selectedBowler = "";
+      }
+      if (state.selectedStriker && state.selectedStriker === state.selectedNonStriker) {
+        state.selectedNonStriker = "";
+      }
+      pickDefaultPlayers();
     }
 
     function canScore() {
       const inning = currentInnings();
+      if (!inning || inning.legalBalls >= state.totalOvers * 6) return false;
+
       return Boolean(
         state.matchStarted &&
         !state.matchComplete &&
-        inning &&
         state.selectedStriker &&
         state.selectedNonStriker &&
         state.selectedBowler &&
-        state.selectedStriker !== state.selectedNonStriker
+        state.selectedStriker !== state.selectedNonStriker &&
+        selectedPlayerIsAvailable(state.selectedStriker, inning.battingTeam, inning, "batter") &&
+        selectedPlayerIsAvailable(state.selectedNonStriker, inning.battingTeam, inning, "batter") &&
+        selectedPlayerIsAvailable(state.selectedBowler, inning.bowlingTeam, inning, "bowler")
       );
     }
 
@@ -1161,9 +1241,13 @@
       if (!inning) return;
       const batters = state.teams[inning.battingTeam].players;
       const bowlers = state.teams[inning.bowlingTeam].players;
+      const availableBatters = batters.filter((player) => !readBattingStat(player.id, inning).out);
 
-      if (!state.selectedStriker && batters[0]) state.selectedStriker = batters[0].id;
-      if (!state.selectedNonStriker && batters[1]) state.selectedNonStriker = batters[1].id;
+      if (!state.selectedStriker && availableBatters[0]) state.selectedStriker = availableBatters[0].id;
+      if (!state.selectedNonStriker) {
+        const nextNonStriker = availableBatters.find((player) => player.id !== state.selectedStriker);
+        if (nextNonStriker) state.selectedNonStriker = nextNonStriker.id;
+      }
       if (!state.selectedBowler && bowlers[0]) state.selectedBowler = bowlers[0].id;
     }
 
@@ -1179,16 +1263,19 @@
 
       state.teams[teamIndex].players.push(createPlayer(name, teamIndex));
       input.value = "";
-      pickDefaultPlayers();
+      validateCurrentSelections();
       render();
     }
 
     function undoLastBall() {
       if (!state.history.length) return;
       const snapshot = state.history.pop();
+      const remainingHistory = state.history.slice();
       const restored = JSON.parse(snapshot);
       Object.keys(state).forEach((key) => delete state[key]);
-      Object.assign(state, restored);
+      Object.assign(state, createDefaultState(), restored);
+      state.history = remainingHistory;
+      validateCurrentSelections();
       render();
     }
 
@@ -1209,17 +1296,20 @@
 
     function requiredRate() {
       const inning = currentInnings();
-      if (!inning || state.currentInningsIndex !== 1 || !state.target) return "--";
+      if (!inning || state.matchComplete || state.currentInningsIndex !== 1 || !state.target) return "--";
       const runsNeeded = Math.max(0, state.target - inning.runs);
       const ballsLeft = Math.max(0, state.totalOvers * 6 - inning.legalBalls);
       return ballsLeft > 0 ? (runsNeeded / (ballsLeft / 6)).toFixed(2) : "--";
     }
 
-    function optionHtml(players, selectedValue) {
+    function optionHtml(players, selectedValue, inning, role) {
       const options = ['<option value="">Select player</option>'];
       players.forEach((player) => {
         const selected = player.id === selectedValue ? "selected" : "";
-        options.push(`<option value="${player.id}" ${selected}>${escapeHtml(player.name)}</option>`);
+        const isOut = role === "batter" && readBattingStat(player.id, inning).out;
+        const disabled = isOut ? "disabled" : "";
+        const status = isOut ? " (Out)" : "";
+        options.push(`<option value="${player.id}" ${selected} ${disabled}>${escapeHtml(player.name)}${status}</option>`);
       });
       return options.join("");
     }
@@ -1246,9 +1336,9 @@
 
       const batters = state.teams[inning.battingTeam].players;
       const bowlers = state.teams[inning.bowlingTeam].players;
-      $("strikerSelect").innerHTML = optionHtml(batters, state.selectedStriker);
-      $("nonStrikerSelect").innerHTML = optionHtml(batters, state.selectedNonStriker);
-      $("bowlerSelect").innerHTML = optionHtml(bowlers, state.selectedBowler);
+      $("strikerSelect").innerHTML = optionHtml(batters, state.selectedStriker, inning, "batter");
+      $("nonStrikerSelect").innerHTML = optionHtml(batters, state.selectedNonStriker, inning, "batter");
+      $("bowlerSelect").innerHTML = optionHtml(bowlers, state.selectedBowler, inning, "bowler");
     }
 
     function renderScoreHero() {
@@ -1413,10 +1503,17 @@
     });
 
     $("totalOvers").addEventListener("input", (event) => {
-      state.totalOvers = Math.max(1, Number(event.target.value) || 20);
-      renderScoreHero();
-      renderSummary();
-      persistMatch();
+      const nextOvers = Number(event.target.value);
+      if (!Number.isFinite(nextOvers) || nextOvers < 1) {
+        persistMatch();
+        return;
+      }
+
+      state.totalOvers = nextOvers;
+      if (state.matchStarted) {
+        checkInningsProgress();
+      }
+      render();
     });
 
     $("createMatchBtn").addEventListener("click", createOrResetMatch);
