@@ -106,8 +106,8 @@ function updateSyncStatus(message) {
 
 function cloudReadyMessage() {
   if (!isCloudConfigured()) return "Local only. Firebase is not configured.";
-  if (!cloudPin) return "Online database ready. Create a PIN or join an existing match.";
-  return `Online sync active for PIN ${cloudPin}. Other devices can join with this PIN.`;
+  if (!cloudPin) return "Create or join a PIN to share and edit this scorecard live.";
+  return `Live sharing is active for PIN ${cloudPin}. Other devices can view and edit with this PIN.`;
 }
 
 function exportCloudState() {
