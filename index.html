@@ -492,6 +492,36 @@
       background: var(--amber);
     }
 
+
+    .innings-viewer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .innings-viewer button {
+      min-height: 36px;
+      padding: 8px 12px;
+      color: var(--navy);
+      background: #eef4f2;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-weight: 800;
+    }
+
+    .innings-viewer button.active {
+      color: var(--white);
+      background: var(--green);
+      border-color: var(--green);
+    }
+
+    .viewing-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -829,6 +859,14 @@
             </div>
           </div>
 
+          <div class="innings-viewer" aria-label="View innings scorecards">
+            <button id="viewLiveBtn" class="active">Live</button>
+            <button id="viewInnings1Btn">1st Innings</button>
+            <button id="viewInnings2Btn">2nd Innings</button>
+          </div>
+          <div class="viewing-note" id="viewingInningsNote">Showing live innings.</div>
+
+
           <div class="extras-detail-grid" aria-label="Extras breakdown">
             <div class="extras-detail-box">
               <span>Wides</span>
@@ -978,6 +1016,7 @@
         matchComplete: false,
         totalOvers: 20,
         currentInningsIndex: 0,
+        viewingInningsIndex: null,
         target: null,
         result: "Match not finished",
         selectedStriker: "",
@@ -1075,6 +1114,7 @@
         }
       });
       state.currentInningsIndex = Math.min(state.currentInningsIndex, Math.max(0, state.innings.length - 1));
+      state.viewingInningsIndex = Number.isInteger(state.viewingInningsIndex) && state.innings[state.viewingInningsIndex] ? state.viewingInningsIndex : null;
       if (state.matchStarted && !state.innings.length) {
         state.matchStarted = false;
       }
@@ -1134,6 +1174,17 @@
 
     function currentInnings() {
       return state.innings[state.currentInningsIndex] || null;
+    }
+
+    function displayedInnings() {
+      if (state.viewingInningsIndex !== null && state.innings[state.viewingInningsIndex]) {
+        return state.innings[state.viewingInningsIndex];
+      }
+      return currentInnings();
+    }
+
+    function isViewingLiveInnings() {
+      return state.viewingInningsIndex === null;
     }
 
     function teamName(index) {
@@ -1649,6 +1700,7 @@
       if (state.currentInningsIndex === 0) {
         state.target = inning.runs + 1;
         state.currentInningsIndex = 1;
+        state.viewingInningsIndex = null;
         state.innings.push(createInnings(inning.bowlingTeam, inning.battingTeam));
         state.selectedStriker = "";
         state.selectedNonStriker = "";
@@ -1696,6 +1748,7 @@
       state.matchStarted = true;
       state.matchComplete = false;
       state.currentInningsIndex = 0;
+      state.viewingInningsIndex = null;
       state.target = null;
       state.result = "Match not finished";
       state.history = [];
@@ -1849,7 +1902,7 @@
       $("summaryTeam0Score").textContent = scoreLineForTeam(0);
       $("summaryTeam1Score").textContent = scoreLineForTeam(1);
 
-      const inning = currentInnings();
+      const inning = displayedInnings();
       $("inningsLabel").textContent = state.matchStarted ? `Innings ${state.currentInningsIndex + 1}` : "Innings --";
       $("summaryCurrent").textContent = inning ? `${teamName(inning.battingTeam)} batting` : "--";
       $("summaryResult").textContent = state.result;
@@ -1857,7 +1910,7 @@
 
 
     function renderExtras() {
-      const inning = currentInnings();
+      const inning = displayedInnings();
 
       if (!inning) {
         $("widesValue").textContent = "0";
@@ -1882,7 +1935,7 @@
     }
 
     function renderFallOfWickets() {
-      const inning = currentInnings();
+      const inning = displayedInnings();
       const list = $("fallOfWicketsList");
       if (!list) return;
 
@@ -1904,7 +1957,7 @@
     }
 
     function renderTimeline() {
-      const inning = currentInnings();
+      const inning = displayedInnings();
       const timeline = $("timeline");
       if (!inning || !inning.timeline.length) {
         timeline.innerHTML = '<div class="empty-state">No ball-by-ball updates yet.</div>';
@@ -1922,7 +1975,7 @@
     }
 
     function renderBattingTable() {
-      const inning = currentInnings();
+      const inning = displayedInnings();
       const tbody = $("battingTable");
       if (!inning) {
         tbody.innerHTML = '<tr><td colspan="7">Create a match to view the batting scorecard.</td></tr>';
@@ -1936,8 +1989,9 @@
         const stat = readBattingStat(player.id, inning);
         const strikeRate = stat.balls > 0 ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
         const status = dismissalText(stat, player.id);
-        const isStriker = player.id === state.selectedStriker;
-        const isNonStriker = player.id === state.selectedNonStriker;
+        const isLiveDisplayedInnings = displayedInnings() === currentInnings();
+        const isStriker = isLiveDisplayedInnings && player.id === state.selectedStriker;
+        const isNonStriker = isLiveDisplayedInnings && player.id === state.selectedNonStriker;
         const strikeMark = isStriker ? " *" : isNonStriker ? " †" : "";
         const activeClass = isStriker || isNonStriker ? "active-batter" : "";
         return `
@@ -1955,7 +2009,7 @@
     }
 
     function renderBowlingTable() {
-      const inning = currentInnings();
+      const inning = displayedInnings();
       const tbody = $("bowlingTable");
       if (!inning) {
         tbody.innerHTML = '<tr><td colspan="8">Create a match to view the bowling scorecard.</td></tr>';
@@ -2010,6 +2064,30 @@
       $("bowlingTeamSelect").options[1].textContent = teamName(0);
     }
 
+
+
+    function renderInningsViewer() {
+      const liveBtn = $("viewLiveBtn");
+      const firstBtn = $("viewInnings1Btn");
+      const secondBtn = $("viewInnings2Btn");
+      const note = $("viewingInningsNote");
+      if (!liveBtn || !firstBtn || !secondBtn || !note) return;
+
+      liveBtn.classList.toggle("active", state.viewingInningsIndex === null);
+      firstBtn.classList.toggle("active", state.viewingInningsIndex === 0);
+      secondBtn.classList.toggle("active", state.viewingInningsIndex === 1);
+
+      firstBtn.disabled = !state.innings[0];
+      secondBtn.disabled = !state.innings[1];
+
+      if (state.viewingInningsIndex === null) {
+        note.textContent = "Showing live innings.";
+      } else {
+        const inning = displayedInnings();
+        note.textContent = inning ? `Viewing Innings ${state.viewingInningsIndex + 1}: ${teamName(inning.battingTeam)} batting.` : "No innings available.";
+      }
+    }
+
     function render() {
       renderSetupNames();
       renderPlayerLists();
@@ -2017,6 +2095,7 @@
       renderScoreHero();
       renderSummary();
       renderExtras();
+      renderInningsViewer();
       renderFallOfWickets();
       renderTimeline();
       renderBattingTable();
@@ -2170,6 +2249,25 @@
         renderSummary();
         persistMatch();
       });
+    });
+
+
+
+    $("viewLiveBtn").addEventListener("click", () => {
+      state.viewingInningsIndex = null;
+      render();
+    });
+
+    $("viewInnings1Btn").addEventListener("click", () => {
+      if (!state.innings[0]) return;
+      state.viewingInningsIndex = 0;
+      render();
+    });
+
+    $("viewInnings2Btn").addEventListener("click", () => {
+      if (!state.innings[1]) return;
+      state.viewingInningsIndex = 1;
+      render();
     });
 
     loadSavedMatch();
