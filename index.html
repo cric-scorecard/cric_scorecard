@@ -751,6 +751,7 @@
 
   <script>
     const STORAGE_KEY = "cricketScorecardMatch";
+    const MAX_UNDO_HISTORY = 120;
     let skipNextSave = false;
 
     function createDefaultState() {
@@ -854,6 +855,13 @@
         }
       });
       state.currentInningsIndex = Math.min(state.currentInningsIndex, Math.max(0, state.innings.length - 1));
+      if (state.matchStarted && !state.innings.length) {
+        state.matchStarted = false;
+      }
+      if (state.matchComplete && state.innings.length < 2) {
+        state.matchComplete = false;
+        state.result = fallback.result;
+      }
       validateCurrentSelections();
     }
 
@@ -974,6 +982,20 @@
     function saveHistory() {
       const snapshot = JSON.stringify({ ...state, history: [] });
       state.history.push(snapshot);
+      if (state.history.length > MAX_UNDO_HISTORY) {
+        state.history.shift();
+      }
+    }
+
+    function isWaitingForNewBowler(inning = currentInnings()) {
+      return Boolean(
+        inning &&
+        !state.matchComplete &&
+        inning.previousBowler &&
+        inning.legalBalls > 0 &&
+        inning.legalBalls % 6 === 0 &&
+        !state.selectedBowler
+      );
     }
 
     function selectedPlayerIsAvailable(playerId, teamIndex, inning, role) {
@@ -1009,6 +1031,30 @@
         state.selectedNonStriker = "";
       }
       pickDefaultPlayers();
+    }
+
+    function scoreReadinessMessage() {
+      const inning = currentInnings();
+      if (!state.matchStarted) return "Create a match and select striker, non-striker, and bowler";
+      if (state.matchComplete) return "Match finished";
+      if (!inning) return "Create a match to begin scoring";
+
+      const availableBatters = state.teams[inning.battingTeam].players.filter((player) => !readBattingStat(player.id, inning).out);
+      const bowlers = state.teams[inning.bowlingTeam].players;
+
+      if (inning.legalBalls >= state.totalOvers * 6) return "Overs complete. End the innings to continue.";
+      if (isWaitingForNewBowler(inning)) {
+        const hasBowlingAlternative = bowlers.some((player) => player.id !== inning.previousBowler);
+        return hasBowlingAlternative
+          ? `Over complete. Select a new bowler; ${playerName(inning.previousBowler)} cannot bowl consecutive overs.`
+          : "Over complete. Add or select a bowler for the next over.";
+      }
+      if (availableBatters.length < 2) return "Add or select two not-out batters to score.";
+      if (!state.selectedStriker || !state.selectedNonStriker) return "Select striker and non-striker.";
+      if (state.selectedStriker === state.selectedNonStriker) return "Striker and non-striker must be different players.";
+      if (!bowlers.length) return "Add a bowler to the bowling team.";
+      if (!state.selectedBowler) return "Select a bowler.";
+      return "Create a match and select striker, non-striker, and bowler";
     }
 
     function canScore() {
@@ -1263,8 +1309,7 @@
         const nextNonStriker = availableBatters.find((player) => player.id !== state.selectedStriker);
         if (nextNonStriker) state.selectedNonStriker = nextNonStriker.id;
       }
-      const waitingForNewBowler = inning.previousBowler && inning.legalBalls > 0 && inning.legalBalls % 6 === 0;
-      if (!state.selectedBowler && availableBowlers[0] && !waitingForNewBowler) {
+      if (!state.selectedBowler && availableBowlers[0] && !isWaitingForNewBowler(inning)) {
         state.selectedBowler = availableBowlers[0].id;
       }
     }
@@ -1276,6 +1321,12 @@
 
       if (state.teams[teamIndex].players.length >= 11) {
         alert("Each team can have 11 players.");
+        return;
+      }
+
+      const nameExists = state.teams[teamIndex].players.some((player) => player.name.toLowerCase() === name.toLowerCase());
+      if (nameExists) {
+        alert("This player is already in the team.");
         return;
       }
 
@@ -1467,15 +1518,6 @@
 
     function renderControls() {
       const scoringReady = canScore();
-      const inning = currentInnings();
-      const waitingForNewBowler = Boolean(
-        inning &&
-        !state.matchComplete &&
-        inning.previousBowler &&
-        inning.legalBalls > 0 &&
-        inning.legalBalls % 6 === 0 &&
-        !state.selectedBowler
-      );
 
       document.querySelectorAll("[data-run], [data-extra], #wicketBtn, #endInningsBtn").forEach((button) => {
         button.disabled = !state.matchStarted || state.matchComplete || (!scoringReady && button.id !== "endInningsBtn");
@@ -1483,13 +1525,8 @@
       $("undoBtn").disabled = !state.history.length;
       if (scoringReady) {
         scoreHint.textContent = `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling`;
-      } else if (waitingForNewBowler) {
-        const hasBowlingAlternative = state.teams[inning.bowlingTeam].players.some((player) => player.id !== inning.previousBowler);
-        scoreHint.textContent = hasBowlingAlternative
-          ? `Over complete. Select a new bowler; ${playerName(inning.previousBowler)} cannot bowl consecutive overs.`
-          : "Over complete. Add or select a bowler for the next over.";
       } else {
-        scoreHint.textContent = "Create a match and select striker, non-striker, and bowler";
+        scoreHint.textContent = scoreReadinessMessage();
       }
     }
 
@@ -1542,6 +1579,15 @@
       const nextOvers = Number(event.target.value);
       if (!Number.isFinite(nextOvers) || nextOvers < 1) {
         persistMatch();
+        return;
+      }
+
+      const inning = currentInnings();
+      const minimumOvers = inning ? Math.max(1, Math.ceil(inning.legalBalls / 6)) : 1;
+      if (state.matchStarted && nextOvers < minimumOvers) {
+        state.totalOvers = minimumOvers;
+        event.target.value = minimumOvers;
+        render();
         return;
       }
 
