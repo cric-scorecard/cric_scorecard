@@ -1,13 +1,27 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
 const STORAGE_KEY = "cricketScorecardMatch";
 const CLOUD_PIN_STORAGE_KEY = "cricketScorecardCloudPin";
 const MAX_UNDO_HISTORY = 120;
 
-// Free shared storage option for GitHub Pages:
-// 1. Create a Firebase Realtime Database project.
-// 2. Paste your database URL below, for example:
-//    https://your-project-id-default-rtdb.firebaseio.com
-// 3. Deploy this HTML file to GitHub Pages.
-const FIREBASE_DATABASE_URL = "";
+const firebaseConfig = {
+  apiKey: "AIzaSyC1mhPymRaEexmfcgY4Aed6X8frBfraYO0",
+  authDomain: "cric-scorecard-917c8.firebaseapp.com",
+  projectId: "cric-scorecard-917c8",
+  storageBucket: "cric-scorecard-917c8.firebasestorage.app",
+  messagingSenderId: "962099070011",
+  appId: "1:962099070011:web:db627779f6f929ded4881e",
+  measurementId: "G-ZLPMCPLMNQ"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
 const CLOUD_SYNC_INTERVAL_MS = 2500;
 const CLOUD_SAVE_DEBOUNCE_MS = 500;
 const extraLabels = {
@@ -74,15 +88,11 @@ function persistMatch() {
 }
 
 function isCloudConfigured() {
-  return Boolean(FIREBASE_DATABASE_URL && FIREBASE_DATABASE_URL.trim());
+  return Boolean(db);
 }
 
-function cleanDatabaseUrl() {
-  return FIREBASE_DATABASE_URL.trim().replace(/\/+$/, "");
-}
-
-function matchCloudUrl(pin = cloudPin) {
-  return `${cleanDatabaseUrl()}/matches/${pin}.json`;
+function matchCloudRef(pin = cloudPin) {
+  return doc(db, "matches", String(pin));
 }
 
 function updateSyncStatus(message) {
@@ -95,7 +105,7 @@ function updateSyncStatus(message) {
 }
 
 function cloudReadyMessage() {
-  if (!isCloudConfigured()) return "Local only. Add your Firebase Realtime Database URL in FIREBASE_DATABASE_URL to enable PIN sharing.";
+  if (!isCloudConfigured()) return "Local only. Firebase is not configured.";
   if (!cloudPin) return "Online database ready. Create a PIN or join an existing match.";
   return `Online sync active for PIN ${cloudPin}. Other devices can join with this PIN.`;
 }
@@ -123,25 +133,18 @@ async function saveMatchToCloud() {
   };
 
   try {
-    const response = await fetch(matchCloudUrl(), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) throw new Error(`Firebase save failed: ${response.status}`);
+    await setDoc(matchCloudRef(), payload);
     lastRemoteUpdatedAt = updatedAt;
     updateSyncStatus(`Saved online under PIN ${cloudPin}.`);
   } catch (error) {
     console.error(error);
-    updateSyncStatus("Online save failed. Check Firebase URL/rules, then try again.");
+    updateSyncStatus("Online save failed. Check Firestore rules, then try again.");
   }
 }
 
 async function fetchCloudMatch(pin) {
-  const response = await fetch(matchCloudUrl(pin));
-  if (!response.ok) throw new Error(`Firebase load failed: ${response.status}`);
-  return response.json();
+  const snapshot = await getDoc(matchCloudRef(pin));
+  return snapshot.exists() ? snapshot.data() : null;
 }
 
 function applyRemoteState(remoteState, updatedAt = Date.now()) {
@@ -165,7 +168,7 @@ async function loadMatchFromCloud(pin) {
     return;
   }
   if (!isCloudConfigured()) {
-    updateSyncStatus("Firebase URL is missing. Add FIREBASE_DATABASE_URL in the code first.");
+    updateSyncStatus("Firebase is not configured.");
     return;
   }
 
@@ -183,13 +186,13 @@ async function loadMatchFromCloud(pin) {
     updateSyncStatus(`Joined online match with PIN ${cloudPin}.`);
   } catch (error) {
     console.error(error);
-    updateSyncStatus("Unable to join PIN. Check Firebase URL, internet, and database rules.");
+    updateSyncStatus("Unable to join PIN. Check internet and Firestore rules.");
   }
 }
 
 async function createOnlineMatch() {
   if (!isCloudConfigured()) {
-    updateSyncStatus("Firebase URL is missing. Add FIREBASE_DATABASE_URL in the code first.");
+    updateSyncStatus("Firebase is not configured.");
     return;
   }
 
@@ -206,11 +209,11 @@ async function createOnlineMatch() {
       updateSyncStatus(`Created online match. Share PIN ${cloudPin}.`);
       renderCloudControls();
       return;
-    } catch (error) {
-      console.error(error);
-      updateSyncStatus("Unable to create PIN. Check Firebase URL/rules, then try again.");
-      return;
-    }
+        } catch (error) {
+          console.error(error);
+          updateSyncStatus("Unable to create PIN. Check Firestore rules, then try again.");
+          return;
+        }
   }
 
   updateSyncStatus("Could not find an unused 4-digit PIN. Try again.");
