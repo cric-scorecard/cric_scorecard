@@ -2,7 +2,6 @@
 
 A frontend-only cricket scorecard calculator built with one `index.html` file. It stores match progress in browser `localStorage`, so a match continues after refresh on the same device and browser.
 
-Repository: <https://github.com/Kaushik-1323/cric_scorecard>
 
 ## GitHub Pages Deployment
 
