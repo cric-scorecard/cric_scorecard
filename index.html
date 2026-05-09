@@ -842,6 +842,7 @@
           byes: Math.max(0, Number(inning.extras?.byes) || 0),
           legByes: Math.max(0, Number(inning.extras?.legByes) || 0)
         },
+        previousBowler: typeof inning.previousBowler === "string" ? inning.previousBowler : "",
         batting: inning.batting && typeof inning.batting === "object" ? inning.batting : {},
         bowling: inning.bowling && typeof inning.bowling === "object" ? inning.bowling : {},
         timeline: Array.isArray(inning.timeline) ? inning.timeline : []
@@ -895,6 +896,7 @@
         wickets: 0,
         legalBalls: 0,
         extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+        previousBowler: "",
         batting: {},
         bowling: {},
         timeline: []
@@ -977,6 +979,10 @@
     function selectedPlayerIsAvailable(playerId, teamIndex, inning, role) {
       const playerExists = state.teams[teamIndex]?.players.some((player) => player.id === playerId);
       if (!playerExists) return false;
+      if (role === "bowler") {
+        const hasBowlingAlternative = state.teams[teamIndex].players.some((player) => player.id !== inning.previousBowler);
+        return !hasBowlingAlternative || playerId !== inning.previousBowler;
+      }
       if (role !== "batter") return true;
       return !readBattingStat(playerId, inning).out;
     }
@@ -1050,15 +1056,17 @@
     // Legal balls advance the over, update bowler figures, and handle strike changes.
     function completeLegalBall(runsForStrikeSwap) {
       const inning = currentInnings();
-      const bowler = getBowlingStat(state.selectedBowler, inning);
+      const bowlerId = state.selectedBowler;
+      const bowler = getBowlingStat(bowlerId, inning);
       inning.legalBalls += 1;
       bowler.balls += 1;
+      const overComplete = inning.legalBalls % 6 === 0;
 
       if (runsForStrikeSwap % 2 === 1) {
         swapStrike();
       }
 
-      if (inning.legalBalls % 6 === 0) {
+      if (overComplete) {
         if (bowler.currentOverRuns === 0) {
           bowler.maidens += 1;
         }
@@ -1067,6 +1075,12 @@
       }
 
       checkInningsProgress();
+
+      if (overComplete && currentInnings() === inning && !state.matchComplete) {
+        inning.previousBowler = bowlerId;
+        state.selectedBowler = "";
+        addTimeline("over", `Over complete: select a new bowler after ${playerName(bowlerId)}`, oversText(inning.legalBalls));
+      }
     }
 
     function scoreRun(runs) {
@@ -1242,13 +1256,17 @@
       const batters = state.teams[inning.battingTeam].players;
       const bowlers = state.teams[inning.bowlingTeam].players;
       const availableBatters = batters.filter((player) => !readBattingStat(player.id, inning).out);
+      const availableBowlers = bowlers.filter((player) => selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler"));
 
       if (!state.selectedStriker && availableBatters[0]) state.selectedStriker = availableBatters[0].id;
       if (!state.selectedNonStriker) {
         const nextNonStriker = availableBatters.find((player) => player.id !== state.selectedStriker);
         if (nextNonStriker) state.selectedNonStriker = nextNonStriker.id;
       }
-      if (!state.selectedBowler && bowlers[0]) state.selectedBowler = bowlers[0].id;
+      const waitingForNewBowler = inning.previousBowler && inning.legalBalls > 0 && inning.legalBalls % 6 === 0;
+      if (!state.selectedBowler && availableBowlers[0] && !waitingForNewBowler) {
+        state.selectedBowler = availableBowlers[0].id;
+      }
     }
 
     function addPlayer(teamIndex) {
@@ -1307,8 +1325,9 @@
       players.forEach((player) => {
         const selected = player.id === selectedValue ? "selected" : "";
         const isOut = role === "batter" && readBattingStat(player.id, inning).out;
-        const disabled = isOut ? "disabled" : "";
-        const status = isOut ? " (Out)" : "";
+        const bowledPreviousOver = role === "bowler" && !selectedPlayerIsAvailable(player.id, inning.bowlingTeam, inning, "bowler");
+        const disabled = isOut || bowledPreviousOver ? "disabled" : "";
+        const status = isOut ? " (Out)" : bowledPreviousOver ? " (Previous over)" : "";
         options.push(`<option value="${player.id}" ${selected} ${disabled}>${escapeHtml(player.name)}${status}</option>`);
       });
       return options.join("");
@@ -1448,13 +1467,30 @@
 
     function renderControls() {
       const scoringReady = canScore();
+      const inning = currentInnings();
+      const waitingForNewBowler = Boolean(
+        inning &&
+        !state.matchComplete &&
+        inning.previousBowler &&
+        inning.legalBalls > 0 &&
+        inning.legalBalls % 6 === 0 &&
+        !state.selectedBowler
+      );
+
       document.querySelectorAll("[data-run], [data-extra], #wicketBtn, #endInningsBtn").forEach((button) => {
         button.disabled = !state.matchStarted || state.matchComplete || (!scoringReady && button.id !== "endInningsBtn");
       });
       $("undoBtn").disabled = !state.history.length;
-      scoreHint.textContent = scoringReady
-        ? `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling`
-        : "Create a match and select striker, non-striker, and bowler";
+      if (scoringReady) {
+        scoreHint.textContent = `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling`;
+      } else if (waitingForNewBowler) {
+        const hasBowlingAlternative = state.teams[inning.bowlingTeam].players.some((player) => player.id !== inning.previousBowler);
+        scoreHint.textContent = hasBowlingAlternative
+          ? `Over complete. Select a new bowler; ${playerName(inning.previousBowler)} cannot bowl consecutive overs.`
+          : "Over complete. Add or select a bowler for the next over.";
+      } else {
+        scoreHint.textContent = "Create a match and select striker, non-striker, and bowler";
+      }
     }
 
     function renderSetupNames() {
@@ -1548,16 +1584,19 @@
 
     $("strikerSelect").addEventListener("change", (event) => {
       state.selectedStriker = event.target.value;
+      validateCurrentSelections();
       render();
     });
 
     $("nonStrikerSelect").addEventListener("change", (event) => {
       state.selectedNonStriker = event.target.value;
+      validateCurrentSelections();
       render();
     });
 
     $("bowlerSelect").addEventListener("change", (event) => {
       state.selectedBowler = event.target.value;
+      validateCurrentSelections();
       render();
     });
 
