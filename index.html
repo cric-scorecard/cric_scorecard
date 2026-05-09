@@ -316,11 +316,6 @@
       gap: 10px;
     }
 
-    .extra-run-control {
-      max-width: 220px;
-      margin-bottom: 12px;
-    }
-
     .score-btn {
       min-height: 58px;
       color: var(--navy);
@@ -346,6 +341,57 @@
     .score-btn.wicket {
       color: var(--white);
       background: var(--danger);
+    }
+
+    .popup-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(7, 24, 47, 0.48);
+    }
+
+    .popup-backdrop.show {
+      display: flex;
+    }
+
+    .extra-popup {
+      width: min(420px, 100%);
+      padding: 18px;
+      background: var(--white);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .extra-popup h3 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 1.08rem;
+    }
+
+    .extra-popup p {
+      margin: 7px 0 14px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .extra-run-buttons {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .extra-run-buttons button {
+      min-height: 48px;
+      color: var(--navy);
+      background: var(--mint);
+      border: 1px solid #cfeadb;
+      border-radius: 8px;
+      font-weight: 900;
     }
 
     .selection-grid {
@@ -651,17 +697,6 @@
             <h2>4. Live Scoring</h2>
             <span class="hint" id="scoreHint">Select players to score</span>
           </div>
-          <div class="field extra-run-control">
-            <label for="extraRunsSelect">Extra Runs</label>
-            <select id="extraRunsSelect">
-              <option value="1">1 run</option>
-              <option value="2">2 runs</option>
-              <option value="3">3 runs</option>
-              <option value="4">4 runs</option>
-              <option value="5">5 runs</option>
-              <option value="6">6 runs</option>
-            </select>
-          </div>
           <div class="score-buttons">
             <button class="score-btn" data-run="0">0</button>
             <button class="score-btn" data-run="1">1</button>
@@ -765,10 +800,28 @@
     </section>
   </main>
 
+  <div class="popup-backdrop" id="extraPopup" role="dialog" aria-modal="true" aria-labelledby="extraPopupTitle">
+    <div class="extra-popup">
+      <h3 id="extraPopupTitle">Select Extra Runs</h3>
+      <p id="extraPopupHelp">Choose the runs to add for this delivery.</p>
+      <div class="extra-run-buttons" id="extraRunButtons"></div>
+      <div class="button-row">
+        <button class="ghost-btn" id="closeExtraPopupBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const STORAGE_KEY = "cricketScorecardMatch";
     const MAX_UNDO_HISTORY = 120;
+    const extraLabels = {
+      wide: "Wide",
+      noBall: "No Ball",
+      bye: "Bye",
+      legBye: "Leg Bye"
+    };
     let skipNextSave = false;
+    let pendingExtraType = "";
 
     function createDefaultState() {
       return {
@@ -903,12 +956,6 @@
 
     function rate(runs, balls) {
       return balls > 0 ? (runs / (balls / 6)).toFixed(2) : "0.00";
-    }
-
-    function selectedExtraRuns() {
-      const runs = Number($("extraRunsSelect").value);
-      if (!Number.isFinite(runs)) return 1;
-      return Math.min(6, Math.max(1, Math.trunc(runs)));
     }
 
     function createPlayer(name, teamIndex) {
@@ -1173,20 +1220,38 @@
       render();
     }
 
-    function scoreExtra(type) {
+    function openExtraPopup(type) {
+      if (!canScore()) return;
+      pendingExtraType = type;
+
+      const isPenaltyExtra = type === "wide" || type === "noBall";
+      const runOptions = isPenaltyExtra ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6];
+      $("extraPopupTitle").textContent = `${extraLabels[type]} Runs`;
+      $("extraPopupHelp").textContent = isPenaltyExtra
+        ? "1 penalty run is added automatically. Select any additional runs completed."
+        : "Select the total byes or leg byes completed on this legal delivery.";
+      $("extraRunButtons").innerHTML = runOptions.map((runs) => {
+        const label = isPenaltyExtra && runs === 0 ? "Penalty only" : `${runs} run${runs === 1 ? "" : "s"}`;
+        return `<button data-extra-run-choice="${runs}">${label}</button>`;
+      }).join("");
+      $("extraPopup").classList.add("show");
+    }
+
+    function closeExtraPopup() {
+      pendingExtraType = "";
+      $("extraPopup").classList.remove("show");
+      $("extraRunButtons").innerHTML = "";
+    }
+
+    function scoreExtra(type, selectedRuns) {
       if (!canScore()) return;
       saveHistory();
 
       const inning = currentInnings();
       const bowler = getBowlingStat(state.selectedBowler, inning);
       const label = nextBallLabel(inning);
-      const extraRuns = selectedExtraRuns();
-      const extraLabels = {
-        wide: "Wide",
-        noBall: "No Ball",
-        bye: "Bye",
-        legBye: "Leg Bye"
-      };
+      const runsFromPopup = Math.max(0, Math.min(6, Number(selectedRuns) || 0));
+      const extraRuns = type === "wide" || type === "noBall" ? 1 + runsFromPopup : Math.max(1, runsFromPopup);
       const runWord = extraRuns === 1 ? "run" : "runs";
 
       inning.runs += extraRuns;
@@ -1196,7 +1261,7 @@
         inning.extras.wides += extraRuns;
         bowler.runs += extraRuns;
         bowler.currentOverRuns += extraRuns;
-        if ((extraRuns - 1) % 2 === 1) swapStrike();
+        if (runsFromPopup % 2 === 1) swapStrike();
         addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
       }
 
@@ -1204,7 +1269,7 @@
         inning.extras.noBalls += extraRuns;
         bowler.runs += extraRuns;
         bowler.currentOverRuns += extraRuns;
-        if ((extraRuns - 1) % 2 === 1) swapStrike();
+        if (runsFromPopup % 2 === 1) swapStrike();
         addTimeline("extra", `${extraLabels[type]}: ${extraRuns} extra ${runWord}`, label);
       }
 
@@ -1642,7 +1707,21 @@
     });
 
     document.querySelectorAll("[data-extra]").forEach((button) => {
-      button.addEventListener("click", () => scoreExtra(button.dataset.extra));
+      button.addEventListener("click", () => openExtraPopup(button.dataset.extra));
+    });
+
+    $("extraRunButtons").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-extra-run-choice]");
+      if (!button || !pendingExtraType) return;
+      const type = pendingExtraType;
+      const runs = Number(button.dataset.extraRunChoice);
+      closeExtraPopup();
+      scoreExtra(type, runs);
+    });
+
+    $("closeExtraPopupBtn").addEventListener("click", closeExtraPopup);
+    $("extraPopup").addEventListener("click", (event) => {
+      if (event.target.id === "extraPopup") closeExtraPopup();
     });
 
     $("wicketBtn").addEventListener("click", scoreWicket);
