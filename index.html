@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cricket Scorecard Calculator</title>
+  <style>
+    :root {
+      --navy: #07182f;
+      --navy-soft: #10243f;
+      --green: #13a46b;
+      --green-dark: #0f7f55;
+      --mint: #e9f8f1;
+      --line: #dbe5df;
+      --text: #172033;
+      --muted: #657386;
+      --white: #ffffff;
+      --amber: #f4b740;
+      --danger: #d64545;
+      --shadow: 0 16px 36px rgba(7, 24, 47, 0.12);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        linear-gradient(180deg, rgba(19, 164, 107, 0.12), rgba(255, 255, 255, 0) 360px),
+        #f5f8f7;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      border: 0;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .app-shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 42px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      color: var(--navy);
+      font-size: clamp(1.55rem, 3vw, 2.55rem);
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    .status-pill {
+      min-width: 170px;
+      padding: 10px 14px;
+      color: var(--white);
+      background: var(--navy);
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .status-pill span {
+      display: block;
+      color: #a7f2d3;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .score-hero {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(130px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .score-main,
+    .metric {
+      padding: 18px;
+      color: var(--white);
+      background: var(--navy);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .score-main {
+      min-height: 138px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: linear-gradient(135deg, var(--navy), #0d3d3c);
+    }
+
+    .score-label,
+    .metric span {
+      color: #a7f2d3;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .score-value {
+      margin-top: 8px;
+      font-size: clamp(2.5rem, 7vw, 4.8rem);
+      font-weight: 800;
+      line-height: 0.95;
+    }
+
+    .score-context {
+      color: #d9fff0;
+      font-size: 0.95rem;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 10px;
+      color: var(--white);
+      font-size: clamp(1.25rem, 3vw, 2rem);
+      line-height: 1.1;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .card {
+      padding: 18px;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 26px rgba(7, 24, 47, 0.07);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .card h2,
+    .card h3 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 1.04rem;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field label {
+      color: var(--navy-soft);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    input,
+    select {
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 11px;
+      color: var(--text);
+      background: #fbfdfc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      outline: none;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(19, 164, 107, 0.13);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .primary-btn,
+    .secondary-btn,
+    .danger-btn,
+    .ghost-btn {
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-weight: 800;
+    }
+
+    .primary-btn {
+      color: var(--white);
+      background: var(--green);
+    }
+
+    .primary-btn:hover {
+      background: var(--green-dark);
+    }
+
+    .secondary-btn {
+      color: var(--navy);
+      background: var(--mint);
+    }
+
+    .danger-btn {
+      color: var(--white);
+      background: var(--danger);
+    }
+
+    .ghost-btn {
+      color: var(--navy);
+      background: #eef4f2;
+    }
+
+    .teams-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .team-panel {
+      padding: 14px;
+      background: #fbfdfc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .team-panel h3 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 0.98rem;
+    }
+
+    .player-add {
+      display: flex;
+      gap: 8px;
+    }
+
+    .player-list {
+      display: grid;
+      gap: 6px;
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .player-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 34px;
+      padding: 7px 9px;
+      background: var(--white);
+      border: 1px solid #e6eee9;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+
+    .score-buttons {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .score-btn {
+      min-height: 58px;
+      color: var(--navy);
+      background: var(--mint);
+      border: 1px solid #cfeadb;
+      border-radius: 8px;
+      font-size: 1.12rem;
+      font-weight: 900;
+    }
+
+    .score-btn.boundary {
+      color: var(--white);
+      background: var(--green);
+    }
+
+    .score-btn.extra {
+      color: var(--navy);
+      background: #fff8e6;
+      border-color: #f5dfad;
+      font-size: 0.95rem;
+    }
+
+    .score-btn.wicket {
+      color: var(--white);
+      background: var(--danger);
+    }
+
+    .selection-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 620px;
+    }
+
+    th,
+    td {
+      padding: 11px 10px;
+      border-bottom: 1px solid #e7eee9;
+      text-align: left;
+      white-space: nowrap;
+      font-size: 0.9rem;
+    }
+
+    th {
+      color: var(--navy);
+      background: #f1f7f4;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 8px;
+      max-height: 380px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      background: #fbfdfc;
+      border: 1px solid #e6eee9;
+      border-radius: 8px;
+    }
+
+    .ball-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      color: var(--white);
+      background: var(--navy);
+      border-radius: 8px;
+      font-weight: 900;
+      font-size: 0.84rem;
+    }
+
+    .timeline-item.wicket .ball-tag {
+      background: var(--danger);
+    }
+
+    .timeline-item.extra .ball-tag {
+      color: var(--navy);
+      background: var(--amber);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .summary-box {
+      min-height: 78px;
+      padding: 13px;
+      background: #fbfdfc;
+      border: 1px solid #e6eee9;
+      border-radius: 8px;
+    }
+
+    .summary-box span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .summary-box strong {
+      display: block;
+      margin-top: 7px;
+      color: var(--navy);
+      font-size: 1.1rem;
+    }
+
+    .empty-state {
+      padding: 14px;
+      color: var(--muted);
+      background: #fbfdfc;
+      border: 1px dashed #cfdad4;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .small-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 980px) {
+      .topbar,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      .score-hero {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .score-main {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .app-shell {
+        width: min(100% - 22px, 1180px);
+        padding-top: 18px;
+      }
+
+      .score-hero,
+      .form-grid,
+      .teams-grid,
+      .selection-grid,
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .score-buttons {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .player-add {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Cricket Scorecard Calculator</h1>
+        <p>Create a match, add players, score every ball, and watch the cards update live.</p>
+      </div>
+      <div class="status-pill">
+        <span>Match Status</span>
+        <strong id="matchStatus">Not started</strong>
+      </div>
+    </header>
+
+    <section class="score-hero" aria-label="Live score overview">
+      <div class="score-main">
+        <div>
+          <div class="score-label" id="battingLabel">Current Score</div>
+          <div class="score-value" id="scoreValue">0/0</div>
+        </div>
+        <div class="score-context" id="scoreContext">Set up a match to begin scoring.</div>
+      </div>
+      <div class="metric">
+        <span>Overs</span>
+        <strong id="oversValue">0.0</strong>
+      </div>
+      <div class="metric">
+        <span>Run Rate</span>
+        <strong id="runRateValue">0.00</strong>
+      </div>
+      <div class="metric">
+        <span>Target</span>
+        <strong id="targetValue">--</strong>
+      </div>
+      <div class="metric">
+        <span>Required RR</span>
+        <strong id="requiredRateValue">--</strong>
+      </div>
+    </section>
+
+    <div class="grid">
+      <div class="stack">
+        <section class="card">
+          <div class="card-header">
+            <h2>1. Create Match</h2>
+            <span class="hint">Team setup</span>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="team1Name">Team 1 Name</label>
+              <input id="team1Name" value="Team 1" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="team2Name">Team 2 Name</label>
+              <input id="team2Name" value="Team 2" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="matchType">Match Type</label>
+              <select id="matchType">
+                <option value="10">T10</option>
+                <option value="20" selected>T20</option>
+                <option value="50">ODI</option>
+                <option value="90">Test / Custom Overs</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="totalOvers">Total Overs</label>
+              <input id="totalOvers" type="number" min="1" max="450" value="20" />
+            </div>
+            <div class="field">
+              <label for="battingTeamSelect">Batting Team</label>
+              <select id="battingTeamSelect">
+                <option value="0">Team 1</option>
+                <option value="1">Team 2</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="bowlingTeamSelect">Bowling Team</label>
+              <select id="bowlingTeamSelect">
+                <option value="1">Team 2</option>
+                <option value="0">Team 1</option>
+              </select>
+            </div>
+          </div>
+          <div class="button-row">
+            <button class="primary-btn" id="createMatchBtn">Create / Reset Match</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>2. Add Players</h2>
+            <span class="hint">Up to 11 per team</span>
+          </div>
+          <div class="teams-grid">
+            <div class="team-panel">
+              <h3><span id="team0Title">Team 1</span><small id="team0Count">0/11</small></h3>
+              <div class="player-add">
+                <input id="team0PlayerInput" placeholder="Player name" autocomplete="off" />
+                <button class="secondary-btn" data-add-player="0">Add</button>
+              </div>
+              <ul class="player-list" id="team0Players"></ul>
+            </div>
+            <div class="team-panel">
+              <h3><span id="team1Title">Team 2</span><small id="team1Count">0/11</small></h3>
+              <div class="player-add">
+                <input id="team1PlayerInput" placeholder="Player name" autocomplete="off" />
+                <button class="secondary-btn" data-add-player="1">Add</button>
+              </div>
+              <ul class="player-list" id="team1Players"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>3. Select Players</h2>
+            <span class="hint">Active batter and bowler</span>
+          </div>
+          <div class="selection-grid">
+            <div class="field">
+              <label for="strikerSelect">Striker</label>
+              <select id="strikerSelect"></select>
+            </div>
+            <div class="field">
+              <label for="nonStrikerSelect">Non-Striker</label>
+              <select id="nonStrikerSelect"></select>
+            </div>
+            <div class="field">
+              <label for="bowlerSelect">Bowler</label>
+              <select id="bowlerSelect"></select>
+            </div>
+          </div>
+          <p class="small-note">After a wicket, the next available batter is selected automatically. You can always adjust the striker, non-striker, or bowler before the next ball.</p>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>4. Live Scoring</h2>
+            <span class="hint" id="scoreHint">Select players to score</span>
+          </div>
+          <div class="score-buttons">
+            <button class="score-btn" data-run="0">0</button>
+            <button class="score-btn" data-run="1">1</button>
+            <button class="score-btn" data-run="2">2</button>
+            <button class="score-btn" data-run="3">3</button>
+            <button class="score-btn boundary" data-run="4">4</button>
+            <button class="score-btn boundary" data-run="6">6</button>
+            <button class="score-btn extra" data-extra="wide">Wide</button>
+            <button class="score-btn extra" data-extra="noBall">No Ball</button>
+            <button class="score-btn extra" data-extra="bye">Bye</button>
+            <button class="score-btn extra" data-extra="legBye">Leg Bye</button>
+            <button class="score-btn wicket" id="wicketBtn">Wicket</button>
+            <button class="score-btn" id="undoBtn">Undo</button>
+          </div>
+          <div class="button-row">
+            <button class="danger-btn" id="endInningsBtn">End Innings</button>
+            <button class="ghost-btn" id="resetMatchBtn">Reset Match</button>
+          </div>
+        </section>
+      </div>
+
+      <aside class="stack">
+        <section class="card">
+          <div class="card-header">
+            <h2>Match Summary</h2>
+            <span class="hint" id="inningsLabel">Innings --</span>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-box">
+              <span id="summaryTeam0Name">Team 1</span>
+              <strong id="summaryTeam0Score">0/0 (0.0)</strong>
+            </div>
+            <div class="summary-box">
+              <span id="summaryTeam1Name">Team 2</span>
+              <strong id="summaryTeam1Score">0/0 (0.0)</strong>
+            </div>
+            <div class="summary-box">
+              <span>Current Innings</span>
+              <strong id="summaryCurrent">--</strong>
+            </div>
+            <div class="summary-box">
+              <span>Result</span>
+              <strong id="summaryResult">Match not finished</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <h2>Ball-by-Ball Timeline</h2>
+            <span class="hint" id="timelineCount">0 balls</span>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="card" style="margin-top: 18px;">
+      <div class="card-header">
+        <h2>Batting Scorecard</h2>
+        <span class="hint" id="battingCardTeam">--</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Batter</th>
+              <th>Runs</th>
+              <th>Balls</th>
+              <th>4s</th>
+              <th>6s</th>
+              <th>Strike Rate</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="battingTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <div class="card-header">
+        <h2>Bowling Scorecard</h2>
+        <span class="hint" id="bowlingCardTeam">--</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Bowler</th>
+              <th>Overs</th>
+              <th>Maidens</th>
+              <th>Runs</th>
+              <th>Wickets</th>
+              <th>Economy</th>
+            </tr>
+          </thead>
+          <tbody id="bowlingTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "cricketScorecardMatch";
+    let skipNextSave = false;
+
+    function createDefaultState() {
+      return {
+        matchStarted: false,
+        matchComplete: false,
+        totalOvers: 20,
+        currentInningsIndex: 0,
+        target: null,
+        result: "Match not finished",
+        selectedStriker: "",
+        selectedNonStriker: "",
+        selectedBowler: "",
+        history: [],
+        teams: [
+          { name: "Team 1", players: [] },
+          { name: "Team 2", players: [] }
+        ],
+        innings: []
+      };
+    }
+
+    // All match data lives here so the app can run without a backend.
+    const state = createDefaultState();
+
+    const $ = (id) => document.getElementById(id);
+
+    const matchStatus = $("matchStatus");
+    const scoreValue = $("scoreValue");
+    const scoreContext = $("scoreContext");
+    const battingLabel = $("battingLabel");
+    const oversValue = $("oversValue");
+    const runRateValue = $("runRateValue");
+    const targetValue = $("targetValue");
+    const requiredRateValue = $("requiredRateValue");
+    const scoreHint = $("scoreHint");
+
+    function persistMatch() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (error) {
+        console.warn("Unable to save match data locally.", error);
+      }
+    }
+
+    function loadSavedMatch() {
+      try {
+        const savedMatch = localStorage.getItem(STORAGE_KEY);
+        if (!savedMatch) return;
+
+        const restored = JSON.parse(savedMatch);
+        Object.assign(state, createDefaultState(), restored);
+      } catch (error) {
+        console.warn("Unable to restore saved match data.", error);
+      }
+    }
+
+    function resetMatch() {
+      Object.keys(state).forEach((key) => delete state[key]);
+      Object.assign(state, createDefaultState());
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (error) {
+        console.warn("Unable to clear saved match data.", error);
+      }
+      skipNextSave = true;
+      render();
+    }
+
+    function oversText(balls) {
+      return `${Math.floor(balls / 6)}.${balls % 6}`;
+    }
+
+    function nextBallLabel(inning) {
+      return `${Math.floor(inning.legalBalls / 6)}.${(inning.legalBalls % 6) + 1}`;
+    }
+
+    function rate(runs, balls) {
+      return balls > 0 ? (runs / (balls / 6)).toFixed(2) : "0.00";
+    }
+
+    function createPlayer(name, teamIndex) {
+      return {
+        id: `t${teamIndex}p${Date.now()}${Math.random().toString(16).slice(2)}`,
+        name
+      };
+    }
+
+    function createInnings(battingTeam, bowlingTeam) {
+      return {
+        battingTeam,
+        bowlingTeam,
+        runs: 0,
+        wickets: 0,
+        legalBalls: 0,
+        extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+        batting: {},
+        bowling: {},
+        timeline: []
+      };
+    }
+
+    function currentInnings() {
+      return state.innings[state.currentInningsIndex] || null;
+    }
+
+    function teamName(index) {
+      return state.teams[index]?.name || `Team ${index + 1}`;
+    }
+
+    function getBattingStat(playerId, inning = currentInnings()) {
+      if (!inning.batting[playerId]) {
+        inning.batting[playerId] = {
+          runs: 0,
+          balls: 0,
+          fours: 0,
+          sixes: 0,
+          out: false
+        };
+      }
+      return inning.batting[playerId];
+    }
+
+    function getBowlingStat(playerId, inning = currentInnings()) {
+      if (!inning.bowling[playerId]) {
+        inning.bowling[playerId] = {
+          balls: 0,
+          maidens: 0,
+          runs: 0,
+          wickets: 0,
+          currentOverRuns: 0
+        };
+      }
+      return inning.bowling[playerId];
+    }
+
+    function playerById(playerId) {
+      for (const team of state.teams) {
+        const player = team.players.find((item) => item.id === playerId);
+        if (player) return player;
+      }
+      return null;
+    }
+
+    function playerName(playerId) {
+      return playerById(playerId)?.name || "Unknown player";
+    }
+
+    // Store a full snapshot before scoring actions so undo is dependable.
+    function saveHistory() {
+      const snapshot = JSON.stringify({
+        ...state,
+        history: state.history.slice()
+      });
+      state.history.push(snapshot);
+    }
+
+    function canScore() {
+      const inning = currentInnings();
+      return Boolean(
+        state.matchStarted &&
+        !state.matchComplete &&
+        inning &&
+        state.selectedStriker &&
+        state.selectedNonStriker &&
+        state.selectedBowler &&
+        state.selectedStriker !== state.selectedNonStriker
+      );
+    }
+
+    function addTimeline(type, text, label) {
+      const inning = currentInnings();
+      inning.timeline.unshift({
+        type,
+        text,
+        label: label || nextBallLabel(inning)
+      });
+    }
+
+    function swapStrike() {
+      const current = state.selectedStriker;
+      state.selectedStriker = state.selectedNonStriker;
+      state.selectedNonStriker = current;
+    }
+
+    function selectNextBatter() {
+      const inning = currentInnings();
+      const battingTeam = state.teams[inning.battingTeam];
+      const next = battingTeam.players.find((player) => {
+        const stat = getBattingStat(player.id, inning);
+        return !stat.out && player.id !== state.selectedNonStriker;
+      });
+      state.selectedStriker = next ? next.id : "";
+    }
+
+    // Legal balls advance the over, update bowler figures, and handle strike changes.
+    function completeLegalBall(runsForStrikeSwap) {
+      const inning = currentInnings();
+      const bowler = getBowlingStat(state.selectedBowler, inning);
+      inning.legalBalls += 1;
+      bowler.balls += 1;
+
+      if (runsForStrikeSwap % 2 === 1) {
+        swapStrike();
+      }
+
+      if (inning.legalBalls % 6 === 0) {
+        if (bowler.currentOverRuns === 0) {
+          bowler.maidens += 1;
+        }
+        bowler.currentOverRuns = 0;
+        swapStrike();
+      }
+
+      checkInningsProgress();
+    }
+
+    function scoreRun(runs) {
+      if (!canScore()) return;
+      saveHistory();
+
+      const inning = currentInnings();
+      const batter = getBattingStat(state.selectedStriker, inning);
+      const bowler = getBowlingStat(state.selectedBowler, inning);
+      const label = nextBallLabel(inning);
+
+      inning.runs += runs;
+      batter.runs += runs;
+      batter.balls += 1;
+      if (runs === 4) batter.fours += 1;
+      if (runs === 6) batter.sixes += 1;
+      bowler.runs += runs;
+      bowler.currentOverRuns += runs;
+
+      addTimeline("run", `${playerName(state.selectedStriker)} scores ${runs} run${runs === 1 ? "" : "s"}`, label);
+      completeLegalBall(runs);
+      render();
+    }
+
+    function scoreExtra(type) {
+      if (!canScore()) return;
+      saveHistory();
+
+      const inning = currentInnings();
+      const bowler = getBowlingStat(state.selectedBowler, inning);
+      const label = nextBallLabel(inning);
+      const extraLabels = {
+        wide: "Wide",
+        noBall: "No Ball",
+        bye: "Bye",
+        legBye: "Leg Bye"
+      };
+
+      inning.runs += 1;
+
+      // Wides and no-balls add runs but do not consume a legal ball.
+      if (type === "wide") {
+        inning.extras.wides += 1;
+        bowler.runs += 1;
+        bowler.currentOverRuns += 1;
+        addTimeline("extra", `${extraLabels[type]}: 1 extra run`, label);
+      }
+
+      if (type === "noBall") {
+        inning.extras.noBalls += 1;
+        bowler.runs += 1;
+        bowler.currentOverRuns += 1;
+        addTimeline("extra", `${extraLabels[type]}: 1 extra run`, label);
+      }
+
+      // Byes and leg byes consume a ball, but they are not charged to the bowler.
+      if (type === "bye" || type === "legBye") {
+        const batter = getBattingStat(state.selectedStriker, inning);
+        batter.balls += 1;
+        if (type === "bye") inning.extras.byes += 1;
+        if (type === "legBye") inning.extras.legByes += 1;
+        addTimeline("extra", `${extraLabels[type]}: 1 extra run`, label);
+        completeLegalBall(1);
+      } else {
+        checkInningsProgress();
+      }
+
+      render();
+    }
+
+    function scoreWicket() {
+      if (!canScore()) return;
+      saveHistory();
+
+      const inning = currentInnings();
+      const batter = getBattingStat(state.selectedStriker, inning);
+      const bowler = getBowlingStat(state.selectedBowler, inning);
+      const outPlayer = state.selectedStriker;
+      const label = nextBallLabel(inning);
+
+      batter.balls += 1;
+      batter.out = true;
+      inning.wickets += 1;
+      bowler.wickets += 1;
+
+      addTimeline("wicket", `Wicket: ${playerName(outPlayer)} is out`, label);
+      selectNextBatter();
+      completeLegalBall(0);
+      render();
+    }
+
+    function checkInningsProgress() {
+      const inning = currentInnings();
+      if (!inning || state.matchComplete) return;
+
+      const inningsBalls = state.totalOvers * 6;
+      const targetReached = state.currentInningsIndex === 1 && state.target && inning.runs >= state.target;
+
+      if (inning.wickets >= 10 || inning.legalBalls >= inningsBalls || targetReached) {
+        finishInnings();
+      }
+    }
+
+    // First innings creates a target; second innings completes the match result.
+    function finishInnings() {
+      if (!state.matchStarted || state.matchComplete) return;
+
+      const inning = currentInnings();
+      if (state.currentInningsIndex === 0) {
+        state.target = inning.runs + 1;
+        state.currentInningsIndex = 1;
+        state.innings.push(createInnings(inning.bowlingTeam, inning.battingTeam));
+        state.selectedStriker = "";
+        state.selectedNonStriker = "";
+        state.selectedBowler = "";
+        pickDefaultPlayers();
+      } else {
+        state.matchComplete = true;
+        state.result = calculateResult();
+      }
+    }
+
+    function calculateResult() {
+      const first = state.innings[0];
+      const second = state.innings[1];
+      const firstTeam = teamName(first.battingTeam);
+      const secondTeam = teamName(second.battingTeam);
+
+      if (second.runs >= state.target) {
+        return `${secondTeam} won by ${10 - second.wickets} wicket${10 - second.wickets === 1 ? "" : "s"}`;
+      }
+
+      if (second.runs === first.runs) {
+        return "Match tied";
+      }
+
+      const margin = first.runs - second.runs;
+      return `${firstTeam} won by ${margin} run${margin === 1 ? "" : "s"}`;
+    }
+
+    function createOrResetMatch() {
+      const team0 = $("team1Name").value.trim() || "Team 1";
+      const team1 = $("team2Name").value.trim() || "Team 2";
+      const overs = Math.max(1, Number($("totalOvers").value) || 20);
+      const battingTeam = Number($("battingTeamSelect").value);
+      const bowlingTeam = Number($("bowlingTeamSelect").value);
+
+      if (battingTeam === bowlingTeam) {
+        alert("Batting and bowling teams must be different.");
+        return;
+      }
+
+      state.teams[0].name = team0;
+      state.teams[1].name = team1;
+      state.totalOvers = overs;
+      state.matchStarted = true;
+      state.matchComplete = false;
+      state.currentInningsIndex = 0;
+      state.target = null;
+      state.result = "Match not finished";
+      state.history = [];
+      state.innings = [createInnings(battingTeam, bowlingTeam)];
+      state.selectedStriker = "";
+      state.selectedNonStriker = "";
+      state.selectedBowler = "";
+      pickDefaultPlayers();
+      render();
+    }
+
+    function pickDefaultPlayers() {
+      const inning = currentInnings();
+      if (!inning) return;
+      const batters = state.teams[inning.battingTeam].players;
+      const bowlers = state.teams[inning.bowlingTeam].players;
+
+      if (!state.selectedStriker && batters[0]) state.selectedStriker = batters[0].id;
+      if (!state.selectedNonStriker && batters[1]) state.selectedNonStriker = batters[1].id;
+      if (!state.selectedBowler && bowlers[0]) state.selectedBowler = bowlers[0].id;
+    }
+
+    function addPlayer(teamIndex) {
+      const input = $(`team${teamIndex}PlayerInput`);
+      const name = input.value.trim();
+      if (!name) return;
+
+      if (state.teams[teamIndex].players.length >= 11) {
+        alert("Each team can have 11 players.");
+        return;
+      }
+
+      state.teams[teamIndex].players.push(createPlayer(name, teamIndex));
+      input.value = "";
+      pickDefaultPlayers();
+      render();
+    }
+
+    function undoLastBall() {
+      if (!state.history.length) return;
+      const snapshot = state.history.pop();
+      const restored = JSON.parse(snapshot);
+      Object.keys(state).forEach((key) => delete state[key]);
+      Object.assign(state, restored);
+      render();
+    }
+
+    function inningsForTeam(teamIndex) {
+      return state.innings.find((inning) => inning.battingTeam === teamIndex);
+    }
+
+    function scoreLineForTeam(teamIndex) {
+      const inning = inningsForTeam(teamIndex);
+      if (!inning) return "0/0 (0.0)";
+      return `${inning.runs}/${inning.wickets} (${oversText(inning.legalBalls)})`;
+    }
+
+    function extrasTotal(inning) {
+      if (!inning) return 0;
+      return inning.extras.wides + inning.extras.noBalls + inning.extras.byes + inning.extras.legByes;
+    }
+
+    function requiredRate() {
+      const inning = currentInnings();
+      if (!inning || state.currentInningsIndex !== 1 || !state.target) return "--";
+      const runsNeeded = Math.max(0, state.target - inning.runs);
+      const ballsLeft = Math.max(0, state.totalOvers * 6 - inning.legalBalls);
+      return ballsLeft > 0 ? (runsNeeded / (ballsLeft / 6)).toFixed(2) : "--";
+    }
+
+    function optionHtml(players, selectedValue) {
+      const options = ['<option value="">Select player</option>'];
+      players.forEach((player) => {
+        const selected = player.id === selectedValue ? "selected" : "";
+        options.push(`<option value="${player.id}" ${selected}>${escapeHtml(player.name)}</option>`);
+      });
+      return options.join("");
+    }
+
+    function renderPlayerLists() {
+      state.teams.forEach((team, index) => {
+        $(`team${index}Title`).textContent = team.name;
+        $(`team${index}Count`).textContent = `${team.players.length}/11`;
+        const list = $(`team${index}Players`);
+        list.innerHTML = team.players.length
+          ? team.players.map((player, playerIndex) => `<li><span>${playerIndex + 1}. ${escapeHtml(player.name)}</span></li>`).join("")
+          : '<li><span>No players added</span></li>';
+      });
+    }
+
+    function renderSelectors() {
+      const inning = currentInnings();
+      if (!inning) {
+        $("strikerSelect").innerHTML = '<option value="">Create match first</option>';
+        $("nonStrikerSelect").innerHTML = '<option value="">Create match first</option>';
+        $("bowlerSelect").innerHTML = '<option value="">Create match first</option>';
+        return;
+      }
+
+      const batters = state.teams[inning.battingTeam].players;
+      const bowlers = state.teams[inning.bowlingTeam].players;
+      $("strikerSelect").innerHTML = optionHtml(batters, state.selectedStriker);
+      $("nonStrikerSelect").innerHTML = optionHtml(batters, state.selectedNonStriker);
+      $("bowlerSelect").innerHTML = optionHtml(bowlers, state.selectedBowler);
+    }
+
+    function renderScoreHero() {
+      const inning = currentInnings();
+      const isReady = Boolean(inning);
+
+      matchStatus.textContent = state.matchComplete ? "Finished" : state.matchStarted ? "Live" : "Not started";
+      scoreValue.textContent = isReady ? `${inning.runs}/${inning.wickets}` : "0/0";
+      oversValue.textContent = isReady ? oversText(inning.legalBalls) : "0.0";
+      runRateValue.textContent = isReady ? rate(inning.runs, inning.legalBalls) : "0.00";
+      targetValue.textContent = state.target || "--";
+      requiredRateValue.textContent = requiredRate();
+      battingLabel.textContent = isReady ? `${teamName(inning.battingTeam)} batting` : "Current Score";
+
+      if (!isReady) {
+        scoreContext.textContent = "Set up a match to begin scoring.";
+      } else {
+        scoreContext.textContent = `${teamName(inning.bowlingTeam)} bowling | Balls ${inning.legalBalls} | Extras ${extrasTotal(inning)} | ${state.totalOvers} overs match`;
+      }
+    }
+
+    function renderSummary() {
+      $("summaryTeam0Name").textContent = teamName(0);
+      $("summaryTeam1Name").textContent = teamName(1);
+      $("summaryTeam0Score").textContent = scoreLineForTeam(0);
+      $("summaryTeam1Score").textContent = scoreLineForTeam(1);
+
+      const inning = currentInnings();
+      $("inningsLabel").textContent = state.matchStarted ? `Innings ${state.currentInningsIndex + 1}` : "Innings --";
+      $("summaryCurrent").textContent = inning ? `${teamName(inning.battingTeam)} batting` : "--";
+      $("summaryResult").textContent = state.result;
+    }
+
+    function renderTimeline() {
+      const inning = currentInnings();
+      const timeline = $("timeline");
+      if (!inning || !inning.timeline.length) {
+        timeline.innerHTML = '<div class="empty-state">No ball-by-ball updates yet.</div>';
+        $("timelineCount").textContent = "0 balls";
+        return;
+      }
+
+      $("timelineCount").textContent = `${inning.timeline.length} events`;
+      timeline.innerHTML = inning.timeline.map((item) => `
+        <div class="timeline-item ${item.type}">
+          <span class="ball-tag">${escapeHtml(item.label)}</span>
+          <span>${escapeHtml(item.text)}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderBattingTable() {
+      const inning = currentInnings();
+      const tbody = $("battingTable");
+      if (!inning) {
+        tbody.innerHTML = '<tr><td colspan="7">Create a match to view the batting scorecard.</td></tr>';
+        $("battingCardTeam").textContent = "--";
+        return;
+      }
+
+      const players = state.teams[inning.battingTeam].players;
+      $("battingCardTeam").textContent = teamName(inning.battingTeam);
+      tbody.innerHTML = players.length ? players.map((player) => {
+        const stat = getBattingStat(player.id, inning);
+        const strikeRate = stat.balls ? ((stat.runs / stat.balls) * 100).toFixed(2) : "0.00";
+        const status = stat.out ? "Out" : "Not Out";
+        return `
+          <tr>
+            <td>${escapeHtml(player.name)}</td>
+            <td>${stat.runs}</td>
+            <td>${stat.balls}</td>
+            <td>${stat.fours}</td>
+            <td>${stat.sixes}</td>
+            <td>${strikeRate}</td>
+            <td>${status}</td>
+          </tr>
+        `;
+      }).join("") : '<tr><td colspan="7">Add players to the batting team.</td></tr>';
+    }
+
+    function renderBowlingTable() {
+      const inning = currentInnings();
+      const tbody = $("bowlingTable");
+      if (!inning) {
+        tbody.innerHTML = '<tr><td colspan="6">Create a match to view the bowling scorecard.</td></tr>';
+        $("bowlingCardTeam").textContent = "--";
+        return;
+      }
+
+      const players = state.teams[inning.bowlingTeam].players;
+      $("bowlingCardTeam").textContent = teamName(inning.bowlingTeam);
+      tbody.innerHTML = players.length ? players.map((player) => {
+        const stat = getBowlingStat(player.id, inning);
+        const economy = stat.balls ? (stat.runs / (stat.balls / 6)).toFixed(2) : "0.00";
+        return `
+          <tr>
+            <td>${escapeHtml(player.name)}</td>
+            <td>${oversText(stat.balls)}</td>
+            <td>${stat.maidens}</td>
+            <td>${stat.runs}</td>
+            <td>${stat.wickets}</td>
+            <td>${economy}</td>
+          </tr>
+        `;
+      }).join("") : '<tr><td colspan="6">Add players to the bowling team.</td></tr>';
+    }
+
+    function renderControls() {
+      const scoringReady = canScore();
+      document.querySelectorAll("[data-run], [data-extra], #wicketBtn, #endInningsBtn").forEach((button) => {
+        button.disabled = !state.matchStarted || state.matchComplete || (!scoringReady && button.id !== "endInningsBtn");
+      });
+      $("undoBtn").disabled = !state.history.length;
+      scoreHint.textContent = scoringReady
+        ? `${playerName(state.selectedStriker)} on strike, ${playerName(state.selectedBowler)} bowling`
+        : "Create a match and select striker, non-striker, and bowler";
+    }
+
+    function renderSetupNames() {
+      $("team1Name").value = state.teams[0].name;
+      $("team2Name").value = state.teams[1].name;
+      $("totalOvers").value = state.totalOvers;
+      $("summaryTeam0Name").textContent = state.teams[0].name;
+      $("summaryTeam1Name").textContent = state.teams[1].name;
+      $("battingTeamSelect").options[0].textContent = state.teams[0].name;
+      $("battingTeamSelect").options[1].textContent = state.teams[1].name;
+      $("bowlingTeamSelect").options[0].textContent = state.teams[1].name;
+      $("bowlingTeamSelect").options[1].textContent = state.teams[0].name;
+    }
+
+    function render() {
+      renderSetupNames();
+      renderPlayerLists();
+      renderSelectors();
+      renderScoreHero();
+      renderSummary();
+      renderTimeline();
+      renderBattingTable();
+      renderBowlingTable();
+      renderControls();
+
+      if (skipNextSave) {
+        skipNextSave = false;
+      } else {
+        persistMatch();
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    $("matchType").addEventListener("change", (event) => {
+      $("totalOvers").value = event.target.value;
+      state.totalOvers = Math.max(1, Number(event.target.value) || 20);
+      render();
+    });
+
+    $("totalOvers").addEventListener("input", (event) => {
+      state.totalOvers = Math.max(1, Number(event.target.value) || 20);
+      renderScoreHero();
+      renderSummary();
+      persistMatch();
+    });
+
+    $("createMatchBtn").addEventListener("click", createOrResetMatch);
+    $("resetMatchBtn").addEventListener("click", resetMatch);
+
+    document.querySelectorAll("[data-add-player]").forEach((button) => {
+      button.addEventListener("click", () => addPlayer(Number(button.dataset.addPlayer)));
+    });
+
+    ["team0PlayerInput", "team1PlayerInput"].forEach((id, index) => {
+      $(id).addEventListener("keydown", (event) => {
+        if (event.key === "Enter") addPlayer(index);
+      });
+    });
+
+    document.querySelectorAll("[data-run]").forEach((button) => {
+      button.addEventListener("click", () => scoreRun(Number(button.dataset.run)));
+    });
+
+    document.querySelectorAll("[data-extra]").forEach((button) => {
+      button.addEventListener("click", () => scoreExtra(button.dataset.extra));
+    });
+
+    $("wicketBtn").addEventListener("click", scoreWicket);
+    $("undoBtn").addEventListener("click", undoLastBall);
+    $("endInningsBtn").addEventListener("click", () => {
+      if (!state.matchStarted || state.matchComplete) return;
+      saveHistory();
+      finishInnings();
+      render();
+    });
+
+    $("strikerSelect").addEventListener("change", (event) => {
+      state.selectedStriker = event.target.value;
+      render();
+    });
+
+    $("nonStrikerSelect").addEventListener("change", (event) => {
+      state.selectedNonStriker = event.target.value;
+      render();
+    });
+
+    $("bowlerSelect").addEventListener("change", (event) => {
+      state.selectedBowler = event.target.value;
+      render();
+    });
+
+    ["team1Name", "team2Name"].forEach((id, index) => {
+      $(id).addEventListener("input", (event) => {
+        state.teams[index].name = event.target.value.trim() || `Team ${index + 1}`;
+        renderSetupNames();
+        renderPlayerLists();
+        renderSummary();
+        persistMatch();
+      });
+    });
+
+    loadSavedMatch();
+    render();
+  </script>
+</body>
+</html>
